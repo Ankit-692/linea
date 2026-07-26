@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/state/app_state.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key});
@@ -15,7 +16,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _isPlaying = false;
   
   // Speed setting: milliseconds per line. Default is 2500ms (2.5 seconds per line)
-  int _speedMs = 2500; 
+  int _speedMs = Hive.box('settingsBox').get('speedMs', defaultValue: 2500); 
 
   @override
   void dispose() {
@@ -52,6 +53,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     setState(() {
       _speedMs = newSpeedMs.toInt();
     });
+    Hive.box('settingsBox').put('speedMs', _speedMs);
     if (_isPlaying) {
       _startTimer(); // Restarts timer instantly with the new duration
     }
@@ -60,7 +62,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    
+    final isDark = appState.isDarkMode;
+
     if (appState.currentBookPages.isEmpty) {
       return Scaffold(
         appBar: AppBar(title: const Text('Empty File'), backgroundColor: Colors.teal.shade50),
@@ -78,8 +81,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(appState.currentBookTitle),
-        backgroundColor: Colors.teal.shade50,
+        backgroundColor: isDark ? Colors.grey.shade900 : Colors.teal.shade50,
         actions: [
+          IconButton(
+            icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
+            onPressed: appState.toggleTheme,
+            tooltip: 'Toggle Theme',
+          ),
           IconButton(
             icon: const Icon(Icons.arrow_back_ios),
             onPressed: appState.previousPage,
@@ -111,7 +119,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   child: Text(
                     currentLine,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 32, height: 1.5, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      fontSize: appState.fontSize, // Dynamic font size
+                      height: 1.5, 
+                      fontWeight: FontWeight.w500
+                    ),
                   ),
                 ),
               ),
@@ -131,12 +143,90 @@ class _ReaderScreenState extends State<ReaderScreen> {
             Container(
               padding: const EdgeInsets.all(24.0),
               decoration: BoxDecoration(
-                color: Colors.teal.shade50,
+                color: isDark ? Colors.grey.shade900 : Colors.teal.shade50,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    child: !_isPlaying
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                  // --- New Font Size Controls ---
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Text Size',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline),
+                            onPressed: appState.decreaseFontSize,
+                            color: Colors.teal,
+                          ),
+                          SizedBox(
+                            width: 50,
+                            child: Text(
+                              '${appState.fontSize.toInt()}px',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            onPressed: appState.increaseFontSize,
+                            color: Colors.teal,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  // --- New Page Jump Slider ---
+                  Row(
+                    children: [
+                      const Icon(Icons.menu_book, color: Colors.teal, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Slider(
+                          // Clamp the value to ensure it never exceeds max if the layout shifts
+                          value: appState.currentPageIndex.toDouble().clamp(
+                            0.0, 
+                            appState.currentBookPages.length > 1 
+                                ? (appState.currentBookPages.length - 1).toDouble() 
+                                : 1.0
+                          ),
+                          min: 0,
+                          max: appState.currentBookPages.length > 1 
+                                ? (appState.currentBookPages.length - 1).toDouble() 
+                                : 1.0,
+                          activeColor: Colors.teal.shade300,
+                          inactiveColor: isDark ? Colors.grey.shade800 : Colors.teal.shade100,
+                          // Disable slider if there's only 1 page
+                          onChanged: appState.currentBookPages.length > 1 
+                            ? (value) => appState.jumpToPage(value.toInt()) 
+                            : null,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 60,
+                        child: Text(
+                          '${appState.currentPageIndex + 1} / ${appState.currentBookPages.length}',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                  
+                  const Divider(height: 16),
                   // Speed Display in Seconds / Lines per second
                   Text(
                     'Speed: ${secondsPerLine.toStringAsFixed(1)}s / line',
@@ -162,9 +252,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       ],
                     ),
                   ),
-                  
+                
                   const SizedBox(height: 16),
-                  
+                  ],
+                          )
+                        : const SizedBox.shrink(), // Shrinks smoothly when playing
+                  ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
