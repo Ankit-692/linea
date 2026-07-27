@@ -85,8 +85,36 @@ class DashboardScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Linea', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: isDark ? Colors.grey.shade900 : Colors.teal.shade50,
+        backgroundColor: isDark ? Colors.grey.shade900 : Theme.of(context).colorScheme.secondaryContainer,
         actions: [
+          PopupMenuButton<int>(
+            icon: const Icon(Icons.palette_outlined),
+            tooltip: 'Change Accent Color',
+            onSelected: appState.setThemeColor,
+            itemBuilder: (context) => [
+              for (int i = 0; i < AppState.themeColors.length; i++)
+                PopupMenuItem(
+                  value: i,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: AppState.themeColors[i],
+                          shape: BoxShape.circle,
+                          border: appState.colorIndex == i
+                              ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 2)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(['Teal', 'Purple', 'Indigo', 'Rose Wood', 'Slate'][i]),
+                    ],
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
             onPressed: appState.toggleTheme,
@@ -106,7 +134,7 @@ class DashboardScreen extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 40),
                 decoration: BoxDecoration(
-                  color: Colors.teal,
+                  color: Theme.of(context).colorScheme.primary,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Column(
@@ -150,10 +178,10 @@ class DashboardScreen extends StatelessWidget {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             // Make the icon container adapt to dark mode
-                            color: isDark ? Colors.grey.shade800 : Colors.teal.shade50,
+                            color: isDark ? Colors.grey.shade800 : Theme.of(context).colorScheme.secondaryContainer,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.book, color: Colors.teal),
+                          child: Icon(Icons.book, color: Theme.of(context).colorScheme.primary,),
                         ),
                         title: Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                         subtitle: Text('Page ${book.currentPageIndex + 1} • Line ${book.currentLineIndex + 1}'),

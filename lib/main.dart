@@ -44,11 +44,17 @@ class LineaApp extends StatelessWidget {
       title: 'Linea',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.light),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: appState.currentThemeColor, 
+          brightness: Brightness.light
+        ),
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.dark),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: appState.currentThemeColor, 
+          brightness: Brightness.dark
+        ),
         useMaterial3: true,
       ),
       // Automatically switch based on state

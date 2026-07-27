@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/state/app_state.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'dart:io' show Platform;
+import 'package:flutter/services.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key});
@@ -20,7 +22,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
   @override
   void dispose() {
-    _timer?.cancel(); 
+    _timer?.cancel();
+    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -59,6 +62,19 @@ class _ReaderScreenState extends State<ReaderScreen> {
     }
   }
 
+  void _toggleOrientation() {
+    if (MediaQuery.of(context).orientation == Orientation.portrait) {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+    } else {
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+      ]);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
@@ -66,7 +82,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     if (appState.currentBookPages.isEmpty) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Empty File'), backgroundColor: Colors.teal.shade50),
+        appBar: AppBar(title: const Text('Empty File'), backgroundColor: Theme.of(context).colorScheme.primary),
         body: const Center(child: Text('No readable text could be extracted.')),
       );
     }
@@ -81,8 +97,36 @@ class _ReaderScreenState extends State<ReaderScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(appState.currentBookTitle),
-        backgroundColor: isDark ? Colors.grey.shade900 : Colors.teal.shade50,
+        backgroundColor: isDark ? Colors.grey.shade900 : Theme.of(context).colorScheme.secondaryContainer,
         actions: [
+          PopupMenuButton<int>(
+            icon: const Icon(Icons.palette_outlined),
+            tooltip: 'Change Accent Color',
+            onSelected: appState.setThemeColor,
+            itemBuilder: (context) => [
+              for (int i = 0; i < AppState.themeColors.length; i++)
+                PopupMenuItem(
+                  value: i,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+                          color: AppState.themeColors[i],
+                          shape: BoxShape.circle,
+                          border: appState.colorIndex == i
+                              ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 2)
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(['Teal', 'Purple', 'Indigo', 'Rose Wood', 'Slate'][i]),
+                    ],
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
             onPressed: appState.toggleTheme,
@@ -110,7 +154,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            LinearProgressIndicator(value: progress, backgroundColor: Colors.grey.shade300, color: Colors.teal),
+            LinearProgressIndicator(value: progress, backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2), color: Theme.of(context).colorScheme.primary),
             
             Expanded(
               child: Center(
@@ -143,7 +187,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
             Container(
               padding: const EdgeInsets.all(24.0),
               decoration: BoxDecoration(
-                color: isDark ? Colors.grey.shade900 : Colors.teal.shade50,
+                color: isDark ? Colors.grey.shade900 : Theme.of(context).colorScheme.secondaryContainer,
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
               ),
               child: Column(
@@ -169,7 +213,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           IconButton(
                             icon: const Icon(Icons.remove_circle_outline),
                             onPressed: appState.decreaseFontSize,
-                            color: Colors.teal,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                           SizedBox(
                             width: 50,
@@ -182,7 +226,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           IconButton(
                             icon: const Icon(Icons.add_circle_outline),
                             onPressed: appState.increaseFontSize,
-                            color: Colors.teal,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                         ],
                       ),
@@ -192,7 +236,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   // --- New Page Jump Slider ---
                   Row(
                     children: [
-                      const Icon(Icons.menu_book, color: Colors.teal, size: 20),
+                      Icon(Icons.menu_book, color: Theme.of(context).colorScheme.primary, size: 20),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Slider(
@@ -207,8 +251,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           max: appState.currentBookPages.length > 1 
                                 ? (appState.currentBookPages.length - 1).toDouble() 
                                 : 1.0,
-                          activeColor: Colors.teal.shade300,
-                          inactiveColor: isDark ? Colors.grey.shade800 : Colors.teal.shade100,
+                          activeColor: Theme.of(context).colorScheme.primary,
+                          inactiveColor: isDark ? Colors.grey.shade800 : Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                           // Disable slider if there's only 1 page
                           onChanged: appState.currentBookPages.length > 1 
                             ? (value) => appState.jumpToPage(value.toInt()) 
@@ -238,7 +282,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     value: _speedMs.toDouble(),
                     min: 500,
                     max: 6000,
-                    activeColor: Colors.teal,
+                    activeColor: Theme.of(context).colorScheme.primary,
                     onChanged: _updateSpeed,
                   ),
                   
@@ -263,14 +307,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     children: [
                       IconButton(
                         iconSize: 32,
-                        icon: const Icon(Icons.fast_rewind, color: Colors.teal),
+                        icon: Icon(Icons.fast_rewind, color: Theme.of(context).colorScheme.primary),
                         onPressed: appState.previousLine,
                       ),
                       const SizedBox(width: 24),
                       
                       FloatingActionButton.large(
                         onPressed: _togglePlayPause,
-                        backgroundColor: Colors.teal,
+                        backgroundColor: Theme.of(context).colorScheme.primary,
                         foregroundColor: Colors.white,
                         child: Icon(_isPlaying ? Icons.pause : Icons.play_arrow),
                       ),
@@ -278,7 +322,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       const SizedBox(width: 24),
                       IconButton(
                         iconSize: 32,
-                        icon: const Icon(Icons.fast_forward, color: Colors.teal),
+                        icon: Icon(Icons.fast_forward, color: Theme.of(context).colorScheme.primary),
                         onPressed: appState.nextLine,
                       ),
                     ],
@@ -291,7 +335,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
                     child: Text(
                       'Line ${appState.currentLineIndex + 1} of ${currentPage.length}',
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.teal),
+                      style: TextStyle(fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary),
                     ),
                   )
                 ],
@@ -300,6 +344,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ],
         ),
       ),
+      floatingActionButton: (Platform.isAndroid || Platform.isIOS)
+          ? FloatingActionButton.small(
+              onPressed: _toggleOrientation,
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+              child: const Icon(Icons.screen_rotation),
+            )
+          : null,
     );
   }
 }

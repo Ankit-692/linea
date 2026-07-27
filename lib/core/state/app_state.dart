@@ -7,6 +7,27 @@ class AppState extends ChangeNotifier {
   bool _isDarkMode = Hive.box('settingsBox').get('isDarkMode', defaultValue: false);
   bool get isDarkMode => _isDarkMode;
 
+  int _colorIndex = Hive.box('settingsBox').get('themeColorIndex', defaultValue: 0);
+  int get colorIndex => _colorIndex;
+
+  static const List<Color> themeColors = [
+    Colors.teal,
+    Colors.deepPurple,
+    Colors.indigo,
+    Color(0xFFB71C1C), // Deep Rose / Crimson Wood
+    Color(0xFF37474F), // Slate Gray / Blue
+  ];
+
+  Color get currentThemeColor => themeColors[_colorIndex];
+
+  void setThemeColor(int index) {
+    if (index >= 0 && index < themeColors.length) {
+      _colorIndex = index;
+      Hive.box('settingsBox').put('themeColorIndex', index);
+      notifyListeners();
+    }
+  }
+  
   // --- Font Size State ---
   // Default to 32.0 if no preference is saved
   double _fontSize = Hive.box('settingsBox').get('fontSize', defaultValue: 32.0);
