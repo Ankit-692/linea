@@ -1,0 +1,26 @@
+display_name: Linea
+package_name: linea
+version: 1.0.0
+maintainer:
+  name: Ankit
+  email: bhartiankit692@gmail.com
+
+priority: optional
+section: utils
+
+icon: assets/icon/app_icon.png
+
+generic_name: Linea
+keywords:
+  - Linea
+
+categories:
+  - Utility
+
+startup_notify: true
+
+executable_name: linea
+
+installed_size: 15000
+
+metainfo:

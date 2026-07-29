@@ -6,8 +6,9 @@
 *.swp
 .buildlog/
 .history
-
-
+*.p12
+*.AppImage
+*.deb
 
 # Flutter repo-specific
 /bin/cache/

@@ -8,9 +8,12 @@ import '../../features/reader/models/book.dart';
 import '../reader/screens/reader_screen.dart';
 import '../reader/services/file_parser_service.dart';
 import '../../features/reader/services/cache_service.dart';
+import '../../core/widgets/keyboard_shortcuts_dialog.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
+
+  bool get _isMobile => Platform.isAndroid || Platform.isIOS;
 
   Future<void> _pickAndParseFile(BuildContext context) async {
     FilePickerResult? result = await FilePicker.pickFiles(
@@ -87,6 +90,12 @@ class DashboardScreen extends StatelessWidget {
         title: const Text('Linea', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: isDark ? Colors.grey.shade900 : Theme.of(context).colorScheme.secondaryContainer,
         actions: [
+          if (!_isMobile)
+          IconButton(
+            icon: const Icon(Icons.help_outline),
+            tooltip: 'Keyboard Shortcuts',
+            onPressed: () => showKeyboardShortcutsDialog(context),
+          ),
           PopupMenuButton<int>(
             icon: const Icon(Icons.palette_outlined),
             tooltip: 'Change Accent Color',

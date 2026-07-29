@@ -1,4 +1,4 @@
-package com.example.linea
+package com.linea.app
 
 import io.flutter.embedding.android.FlutterActivity
 

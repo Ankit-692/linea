@@ -1,0 +1,31 @@
+# display_name: "Linea"
+# package_name: "linea"
+# executable_name: "linea"
+# icon: "assets/icon/app_icon.png"
+# description: "A flutter application."
+# maintainer:
+#   name: Ankit
+#   email: bhartiankit692@gmail.com
+# categories:
+#   - "Utility"
+
+display_name: Linea
+package_name: linea
+executable_name: linea
+icon: assets/icon/app_icon.png
+
+categories:
+  - Utility
+
+generic_name: Linea
+keywords:
+  - Linea
+
+maintainer:
+  name: Ankit
+  email: bhartiankit692@gmail.com
+
+priority: optional
+section: utils
+
+installed_size: 15000
