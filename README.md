@@ -31,11 +31,11 @@ Linea extracts the text from your documents behind the scenes, indexing it by pa
 
 ### Desktop View
 
-
+<div align="center">
 
 https://github.com/user-attachments/assets/dd7c3266-0cdb-479b-9766-baa8442d7f73
 
-
+</div>
 
 ### Mobile View
 
@@ -59,6 +59,15 @@ Installer and Pre-built binaries for desktop and mobile devices are available on
 
 - **Desktop:** macOS, Windows, Linux
 - **Mobile:** Android, iOS
+
+## NOTE for MAC Users
+Since Linea isn't notarized by Apple (no paid developer account), macOS will block it on first open.
+To run it:
+- Right-click the **app → Open → click Open again** in the dialog, OR
+If that doesn't work, open Terminal and run:
+```
+xattr -cr /Applications/Linea.app
+```
 
 ---
 
