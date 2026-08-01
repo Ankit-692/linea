@@ -1,0 +1,45 @@
+name: Build Windows Installer
+
+on:
+  workflow_dispatch:      # manual trigger from the Actions tab
+
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate app icons
+        run: dart run flutter_launcher_icons
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Build Windows release
+        run: flutter build windows --release
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Compile installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "windows\installer.iss"
+        shell: pwsh
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-setup
+          path: windows/Output/*.exe
