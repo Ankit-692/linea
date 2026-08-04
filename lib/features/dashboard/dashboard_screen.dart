@@ -20,6 +20,8 @@ class DashboardScreen extends StatelessWidget {
       type: FileType.custom,
       allowedExtensions: ['pdf', 'epub'],
       lockParentWindow: true,
+      allowMultiple: false,
+      withData: false,
     );
 
     if (result != null && result.files.single.path != null) {
@@ -30,11 +32,19 @@ class DashboardScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _openBook(BuildContext context, String filePath, String title, int startPage, int startLine) async {
+  Future<void> _openBook(
+    BuildContext context,
+    String filePath,
+    String title,
+    int startPage,
+    int startLine,
+  ) async {
     // Check if file still exists on device
     if (!File(filePath).existsSync()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('File not found. It may have been moved or deleted.')),
+        const SnackBar(
+          content: Text('File not found. It may have been moved or deleted.'),
+        ),
       );
       // Optional: Remove from Hive box here
       return;
@@ -47,7 +57,9 @@ class DashboardScreen extends StatelessWidget {
     );
 
     try {
-      List<List<String>>? extractedPages = await CacheService.loadBookCache(filePath);
+      List<List<String>>? extractedPages = await CacheService.loadBookCache(
+        filePath,
+      );
       // 2. If no cache exists, parse it and then save it to the cache
       if (extractedPages == null) {
         extractedPages = await FileParserService.parseFile(filePath);
@@ -55,10 +67,10 @@ class DashboardScreen extends StatelessWidget {
         CacheService.saveBookCache(filePath, extractedPages);
       }
       if (!context.mounted) return;
-      
+
       context.read<AppState>().loadNewBook(
-        title, 
-        filePath, 
+        title,
+        filePath,
         extractedPages,
         startPage: startPage,
         startLine: startLine,
@@ -72,10 +84,10 @@ class DashboardScreen extends StatelessWidget {
       );
     } catch (e) {
       if (!context.mounted) return;
-      Navigator.pop(context); 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: $e')));
     }
   }
 
@@ -84,18 +96,23 @@ class DashboardScreen extends StatelessWidget {
     final box = Hive.box<Book>('booksBox');
     final appState = context.watch<AppState>();
     final isDark = appState.isDarkMode;
-    
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Linea', style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: isDark ? Colors.grey.shade900 : Theme.of(context).colorScheme.secondaryContainer,
+        title: const Text(
+          'Linea',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        backgroundColor: isDark
+            ? Colors.grey.shade900
+            : Theme.of(context).colorScheme.secondaryContainer,
         actions: [
           if (!_isMobile)
-          IconButton(
-            icon: const Icon(Icons.help_outline),
-            tooltip: 'Keyboard Shortcuts',
-            onPressed: () => showKeyboardShortcutsDialog(context),
-          ),
+            IconButton(
+              icon: const Icon(Icons.help_outline),
+              tooltip: 'Keyboard Shortcuts',
+              onPressed: () => showKeyboardShortcutsDialog(context),
+            ),
           PopupMenuButton<int>(
             icon: const Icon(Icons.palette_outlined),
             tooltip: 'Change Accent Color',
@@ -113,12 +130,19 @@ class DashboardScreen extends StatelessWidget {
                           color: AppState.themeColors[i],
                           shape: BoxShape.circle,
                           border: appState.colorIndex == i
-                              ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 2)
+                              ? Border.all(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                  width: 2,
+                                )
                               : null,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Text(['Teal', 'Purple', 'Indigo', 'Rose Wood', 'Slate'][i]),
+                      Text(
+                        ['Teal', 'Purple', 'Indigo', 'Rose Wood', 'Slate'][i],
+                      ),
                     ],
                   ),
                 ),
@@ -148,11 +172,19 @@ class DashboardScreen extends StatelessWidget {
                 ),
                 child: const Column(
                   children: [
-                    Icon(Icons.add_circle_outline, color: Colors.white, size: 48),
+                    Icon(
+                      Icons.add_circle_outline,
+                      color: Colors.white,
+                      size: 48,
+                    ),
                     SizedBox(height: 16),
                     Text(
                       'Import PDF or EPUB',
-                      style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ],
                 ),
@@ -170,7 +202,9 @@ class DashboardScreen extends StatelessWidget {
                 builder: (context, Box<Book> currentBox, _) {
                   if (currentBox.isEmpty) {
                     return const Center(
-                      child: Text('No recent books. Import one to get started!'),
+                      child: Text(
+                        'No recent books. Import one to get started!',
+                      ),
                     );
                   }
 
@@ -187,16 +221,35 @@ class DashboardScreen extends StatelessWidget {
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             // Make the icon container adapt to dark mode
-                            color: isDark ? Colors.grey.shade800 : Theme.of(context).colorScheme.secondaryContainer,
+                            color: isDark
+                                ? Colors.grey.shade800
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.secondaryContainer,
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: Icon(Icons.book, color: Theme.of(context).colorScheme.primary,),
+                          child: Icon(
+                            Icons.book,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
                         ),
-                        title: Text(book.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        subtitle: Text('Page ${book.currentPageIndex + 1} • Line ${book.currentLineIndex + 1}'),
+                        title: Text(
+                          book.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text(
+                          'Page ${book.currentPageIndex + 1} • Line ${book.currentLineIndex + 1}',
+                        ),
                         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
                         onTap: () {
-                          _openBook(context, book.filePath, book.title, book.currentPageIndex, book.currentLineIndex);
+                          _openBook(
+                            context,
+                            book.filePath,
+                            book.title,
+                            book.currentPageIndex,
+                            book.currentLineIndex,
+                          );
                         },
                         onLongPress: () {
                           // Allow deleting from history
