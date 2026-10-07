@@ -26,14 +26,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
-      backgroundColor: Colors.teal.shade50,
+      backgroundColor: colorScheme.surface,
       body: SafeArea(
         child: Column(
           children: [
             Expanded(
               child: PageView(
                 controller: _pageController,
+                physics: const BouncingScrollPhysics(),
                 onPageChanged: (index) {
                   setState(() {
                     _currentPage = index;
@@ -41,18 +44,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 },
                 children: const [
                   _OnboardingPage(
-                    icon: Icons.visibility,
-                    title: 'Read Without Moving Your Eyes',
-                    description: 'Linea uses RSVP (Rapid Serial Visual Presentation) to flash text 6 words at a time. This eliminates eye movement and drastically increases your reading speed.',
+                    icon: Icons.visibility_rounded,
+                    title: 'Read Without\nMoving Your Eyes',
+                    description: 'Linea uses RSVP to flash text one chunk at a time. This eliminates eye movement and drastically increases your reading speed.',
                   ),
                   _OnboardingPage(
-                    icon: Icons.speed,
+                    icon: Icons.speed_rounded,
                     title: 'Control Your Pace',
-                    description: 'Adjust the seconds-per-line speed on the fly. Start slow to get used to the rhythm, then crank it up as your brain adapts.',
+                    description: 'Adjust the words-per-minute speed on the fly. Start slow to get used to the rhythm, then crank it up as your brain adapts.',
                   ),
                   _OnboardingPage(
-                    icon: Icons.library_books,
-                    title: 'Your Books, Everywhere',
+                    icon: Icons.auto_stories_rounded,
+                    title: 'Your Books,\nEverywhere',
                     description: 'Import any PDF or EPUB. Linea strips out the junk, formats it perfectly, and always remembers exactly what line you left off on.',
                   ),
                 ],
@@ -61,7 +64,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             
             // Bottom Controls
             Padding(
-              padding: const EdgeInsets.all(24.0),
+              padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 40.0),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -72,33 +75,57 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       (index) => AnimatedContainer(
                         duration: const Duration(milliseconds: 300),
                         margin: const EdgeInsets.only(right: 8),
-                        height: 10,
-                        width: _currentPage == index ? 24 : 10,
+                        height: 8,
+                        width: _currentPage == index ? 32 : 8,
                         decoration: BoxDecoration(
-                          color: _currentPage == index ? Colors.teal : Colors.teal.shade200,
-                          borderRadius: BorderRadius.circular(10),
+                          color: _currentPage == index ? colorScheme.primary : colorScheme.primary.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
                     ),
                   ),
                   
                   // Next / Get Started Button
-                  FilledButton(
-                    onPressed: () {
-                      if (_currentPage == 2) {
-                        _completeOnboarding(context);
-                      } else {
-                        _pageController.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeIn,
-                        );
-                      }
-                    },
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
+                    child: FilledButton(
+                      onPressed: () {
+                        if (_currentPage == 2) {
+                          _completeOnboarding(context);
+                        } else {
+                          _pageController.nextPage(
+                            duration: const Duration(milliseconds: 400),
+                            curve: Curves.easeInOut,
+                          );
+                        }
+                      },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _currentPage == 2 ? 'Get Started' : 'Next',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          if (_currentPage != 2) ...[
+                            const SizedBox(width: 8),
+                            const Icon(Icons.arrow_forward_rounded, size: 20),
+                          ]
+                        ],
+                      ),
                     ),
-                    child: Text(_currentPage == 2 ? 'Get Started' : 'Next'),
                   ),
                 ],
               ),
@@ -123,23 +150,42 @@ class _OnboardingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Padding(
-      padding: const EdgeInsets.all(40.0),
+      padding: const EdgeInsets.symmetric(horizontal: 40.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 100, color: Colors.teal),
-          const SizedBox(height: 40),
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 80, color: colorScheme.primary),
+          ),
+          const SizedBox(height: 56),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.teal),
+            style: TextStyle(
+              fontSize: 32,
+              fontWeight: FontWeight.w800,
+              height: 1.2,
+              letterSpacing: -0.5,
+              color: Theme.of(context).textTheme.displayLarge?.color,
+            ),
           ),
           const SizedBox(height: 24),
           Text(
             description,
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.black87),
+            style: TextStyle(
+              fontSize: 16,
+              height: 1.6,
+              color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+            ),
           ),
         ],
       ),

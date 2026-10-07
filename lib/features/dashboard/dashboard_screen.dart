@@ -96,16 +96,18 @@ class DashboardScreen extends StatelessWidget {
     final box = Hive.box<Book>('booksBox');
     final appState = context.watch<AppState>();
     final isDark = appState.isDarkMode;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      backgroundColor: isDark ? Colors.black : const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text(
           'Linea',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5),
         ),
-        backgroundColor: isDark
-            ? Colors.grey.shade900
-            : Theme.of(context).colorScheme.secondaryContainer,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
         actions: [
           if (!_isMobile)
             IconButton(
@@ -116,6 +118,7 @@ class DashboardScreen extends StatelessWidget {
           PopupMenuButton<int>(
             icon: const Icon(Icons.palette_outlined),
             tooltip: 'Change Accent Color',
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             onSelected: appState.setThemeColor,
             itemBuilder: (context) => [
               for (int i = 0; i < AppState.themeColors.length; i++)
@@ -131,9 +134,7 @@ class DashboardScreen extends StatelessWidget {
                           shape: BoxShape.circle,
                           border: appState.colorIndex == i
                               ? Border.all(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface,
+                                  color: Theme.of(context).colorScheme.onSurface,
                                   width: 2,
                                 )
                               : null,
@@ -141,7 +142,8 @@ class DashboardScreen extends StatelessWidget {
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        ['Teal', 'Purple', 'Indigo', 'Rose Wood', 'Slate'][i],
+                        ['Mint', 'Purple', 'Royal Blue', 'Coral', 'Sage'][i],
+                        style: const TextStyle(fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
@@ -157,104 +159,230 @@ class DashboardScreen extends StatelessWidget {
         ],
       ),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            const SizedBox(height: 16),
+            // Modern Hero Card
             InkWell(
               onTap: () => _pickAndParseFile(context),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(24),
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 40),
+                padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary,
-                  borderRadius: BorderRadius.circular(16),
+                  gradient: LinearGradient(
+                    colors: [
+                      colorScheme.primary,
+                      colorScheme.primary.withOpacity(0.7),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    if (!isDark)
+                      BoxShadow(
+                        color: colorScheme.primary.withOpacity(0.3),
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      )
+                    else
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.4),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                  ],
                 ),
-                child: const Column(
+                child: Column(
                   children: [
-                    Icon(
-                      Icons.add_circle_outline,
-                      color: Colors.white,
-                      size: 48,
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.add_rounded,
+                        color: Colors.white,
+                        size: 40,
+                      ),
                     ),
-                    SizedBox(height: 16),
-                    Text(
+                    const SizedBox(height: 20),
+                    const Text(
                       'Import PDF or EPUB',
                       style: TextStyle(
                         color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Start reading faster with RSVP',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.8),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-            const SizedBox(height: 32),
-            const Text(
-              'Recent Books',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            const SizedBox(height: 40),
+            Row(
+              children: [
+                const Text(
+                  'Recent Books',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+                const Spacer(),
+                Icon(Icons.auto_stories_rounded, color: colorScheme.primary, size: 20),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Expanded(
               child: ValueListenableBuilder(
                 valueListenable: box.listenable(),
                 builder: (context, Box<Book> currentBox, _) {
                   if (currentBox.isEmpty) {
-                    return const Center(
-                      child: Text(
-                        'No recent books. Import one to get started!',
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.menu_book_rounded, size: 64, color: Colors.grey.withOpacity(0.3)),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No recent books yet.',
+                            style: TextStyle(
+                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   }
 
-                  // Convert to list and reverse so newest is on top
                   final books = currentBox.values.toList().reversed.toList();
 
-                  return ListView.separated(
+                  return ListView.builder(
+                    physics: const BouncingScrollPhysics(),
                     itemCount: books.length,
-                    separatorBuilder: (context, index) => const Divider(),
                     itemBuilder: (context, index) {
                       final book = books[index];
-                      return ListTile(
-                        leading: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            // Make the icon container adapt to dark mode
-                            color: isDark
-                                ? Colors.grey.shade800
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(8),
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF161616) : Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            if (!isDark)
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 16,
+                                offset: const Offset(0, 4),
+                              ),
+                          ],
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(20),
+                            onTap: () {
+                              _openBook(
+                                context,
+                                book.filePath,
+                                book.title,
+                                book.currentPageIndex,
+                                book.currentLineIndex,
+                              );
+                            },
+                            onLongPress: () {
+                              showDialog(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  backgroundColor: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                                  title: const Text('Remove Book?'),
+                                  content: Text('Are you sure you want to remove "${book.title}" from your library?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      style: TextButton.styleFrom(foregroundColor: isDark ? Colors.grey.shade400 : Colors.grey.shade700),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    FilledButton(
+                                      onPressed: () {
+                                        currentBox.delete(book.filePath);
+                                        Navigator.pop(context);
+                                      },
+                                      style: FilledButton.styleFrom(backgroundColor: Colors.red.shade400, foregroundColor: Colors.white),
+                                      child: const Text('Remove'),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 56,
+                                    height: 56,
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: Icon(
+                                      Icons.book_rounded,
+                                      color: colorScheme.primary,
+                                      size: 28,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          book.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Page ${book.currentPageIndex + 1} • Line ${book.currentLineIndex + 1}',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                          child: Icon(
-                            Icons.book,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
                         ),
-                        title: Text(
-                          book.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text(
-                          'Page ${book.currentPageIndex + 1} • Line ${book.currentLineIndex + 1}',
-                        ),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                        onTap: () {
-                          _openBook(
-                            context,
-                            book.filePath,
-                            book.title,
-                            book.currentPageIndex,
-                            book.currentLineIndex,
-                          );
-                        },
-                        onLongPress: () {
-                          // Allow deleting from history
-                          currentBox.delete(book.filePath);
-                        },
                       );
                     },
                   );
