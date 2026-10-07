@@ -6,7 +6,7 @@ import 'core/state/app_state.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
 import 'package:path_provider/path_provider.dart';
-
+import 'package:google_fonts/google_fonts.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
@@ -48,6 +48,7 @@ class LineaApp extends StatelessWidget {
           seedColor: appState.currentThemeColor, 
           brightness: Brightness.light
         ),
+        fontFamily: GoogleFonts.outfit().fontFamily,
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
@@ -55,6 +56,7 @@ class LineaApp extends StatelessWidget {
           seedColor: appState.currentThemeColor, 
           brightness: Brightness.dark
         ),
+        fontFamily: GoogleFonts.outfit().fontFamily,
         useMaterial3: true,
       ),
       // Automatically switch based on state

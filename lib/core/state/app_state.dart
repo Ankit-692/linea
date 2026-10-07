@@ -11,11 +11,11 @@ class AppState extends ChangeNotifier {
   int get colorIndex => _colorIndex;
 
   static const List<Color> themeColors = [
-    Colors.teal,
-    Colors.deepPurple,
-    Colors.indigo,
-    Color(0xFFB71C1C), // Deep Rose / Crimson Wood
-    Color(0xFF37474F), // Slate Gray / Blue
+    Color(0xFF00C9A7), // Modern Mint
+    Color(0xFF845EC2), // Modern Purple
+    Color(0xFF2C73D2), // Royal Blue
+    Color(0xFFFF9671), // Coral
+    Color(0xFF4D8076), // Elegant Sage
   ];
 
   Color get currentThemeColor => themeColors[_colorIndex];
@@ -138,6 +138,16 @@ class AppState extends ChangeNotifier {
     if (pageIndex >= 0 && pageIndex < _currentBookPages.length) {
       _currentPageIndex = pageIndex;
       _currentLineIndex = 0; // Always start at the top of the new page
+      _saveProgress();
+      notifyListeners();
+    }
+  }
+
+  void jumpToLine(int lineIndex) {
+    if (_currentBookPages.isEmpty) return;
+    
+    if (lineIndex >= 0 && lineIndex < _currentBookPages[_currentPageIndex].length) {
+      _currentLineIndex = lineIndex;
       _saveProgress();
       notifyListeners();
     }
