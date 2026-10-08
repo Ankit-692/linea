@@ -4,6 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'dart:ui';
+import 'package:path_provider/path_provider.dart';
 import '../../core/state/app_state.dart';
 import '../../features/reader/models/book.dart';
 import '../reader/screens/reader_screen.dart';
@@ -52,6 +53,108 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     return 'Good evening';
   }
 
+  void _showTopToast(BuildContext context, String title, String message) {
+    final appState = context.read<AppState>();
+    final isDark = appState.isDarkMode;
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    
+    final overlay = Overlay.of(context);
+    late OverlayEntry overlayEntry;
+    
+    overlayEntry = OverlayEntry(
+      builder: (context) => Positioned(
+        top: MediaQuery.of(context).padding.top + 20,
+        left: 24,
+        right: 24,
+        child: Material(
+          color: Colors.transparent,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 600),
+            curve: Curves.elasticOut,
+            builder: (context, value, child) {
+              return Transform.translate(
+                offset: Offset(0, -100 * (1 - value)),
+                child: Opacity(
+                  opacity: value.clamp(0.0, 1.0),
+                  child: child,
+                ),
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: primaryColor.withOpacity(isDark ? 0.2 : 0.15),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+                border: Border.all(
+                  color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(Icons.auto_awesome_rounded, color: primaryColor, size: 24),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: isDark ? Colors.white : Colors.black87,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          message,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    overlay.insert(overlayEntry);
+    
+    Future.delayed(const Duration(seconds: 4), () {
+      if (overlayEntry.mounted) {
+        overlayEntry.remove();
+      }
+    });
+  }
+
   Future<void> _pickAndParseFile(BuildContext context) async {
     FilePickerResult? result = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -62,11 +165,59 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     );
 
     if (result != null && result.files.single.path != null) {
-      final String filePath = result.files.single.path!;
+      final String originalPath = result.files.single.path!;
       final String fileName = result.files.single.name;
 
+      final directory = await getApplicationDocumentsDirectory();
+      final String savedPath = '${directory.path}/$fileName';
+
+      try {
+        await File(originalPath).copy(savedPath);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to save file: $e'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+
+      int startPage = 0;
+      int startLine = 0;
+
+      final box = Hive.box<Book>('booksBox');
+      
+      final existingKey = box.keys.firstWhere(
+        (k) {
+          final b = box.get(k);
+          return b != null && b.title == fileName;
+        },
+        orElse: () => null,
+      );
+
+      if (existingKey != null) {
+        final existingBook = box.get(existingKey)!;
+        startPage = existingBook.currentPageIndex;
+        startLine = existingBook.currentLineIndex;
+        
+        if (existingKey != savedPath) {
+          box.delete(existingKey);
+        }
+
+        if (mounted) {
+          _showTopToast(
+            context, 
+            'Already Imported', 
+            '"$fileName" is already in your library. Resuming your progress!'
+          );
+        }
+      }
+
       if (mounted) {
-        _openBook(context, filePath, fileName, 0, 0);
+        _openBook(context, savedPath, fileName, startPage, startLine);
       }
     }
   }
@@ -262,7 +413,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
       onTap: () => _pickAndParseFile(context),
       child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 24),
-        padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 32),
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(36),
           gradient: isDark 
@@ -302,7 +453,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: isDark ? colorScheme.primary.withOpacity(0.15) : Colors.white.withOpacity(0.25),
                 borderRadius: BorderRadius.circular(24),
@@ -314,10 +465,10 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
               child: Icon(
                 Icons.add_rounded,
                 color: isDark ? colorScheme.primary : Colors.white,
-                size: 36,
+                size: 32,
               ),
             ),
-            const SizedBox(width: 24),
+            const SizedBox(width: 20),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,7 +477,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     'Import Document',
                     style: TextStyle(
                       color: Colors.white,
-                      fontSize: 24,
+                      fontSize: 22,
                       fontWeight: FontWeight.w800,
                       letterSpacing: -0.5,
                     ),
@@ -411,12 +562,12 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                             },
                             onTap: () => _openBook(context, book.filePath, book.title, book.currentPageIndex, book.currentLineIndex),
                             child: Padding(
-                              padding: const EdgeInsets.all(20.0),
+                              padding: const EdgeInsets.all(16.0),
                 child: Row(
                   children: [
                     Container(
-                      width: 70,
-                      height: 90,
+                      width: 60,
+                      height: 80,
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [coverColor.withOpacity(0.7), coverColor],
@@ -437,13 +588,13 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                           book.title.isNotEmpty ? book.title[0].toUpperCase() : '?',
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 32,
+                            fontSize: 28,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 24),
+                    const SizedBox(width: 20),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -453,7 +604,7 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: 16,
                               fontWeight: FontWeight.w800,
                               color: isDark ? Colors.white : Colors.black87,
                               height: 1.2,
@@ -524,8 +675,8 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                     ),
                     const SizedBox(width: 12),
                     Container(
-                      width: 48,
-                      height: 48,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
                         shape: BoxShape.circle,
