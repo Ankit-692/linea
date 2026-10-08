@@ -87,6 +87,7 @@ class AppState extends ChangeNotifier {
       filePath: _currentFilePath,
       currentPageIndex: _currentPageIndex,
       currentLineIndex: _currentLineIndex,
+      totalPages: _currentBookPages.length,
     );
     
     // Save or update the book using its file path as the unique key

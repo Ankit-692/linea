@@ -7,6 +7,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:ui';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../core/widgets/keyboard_shortcuts_dialog.dart';
 
 class ReaderScreen extends StatefulWidget {
@@ -31,6 +32,23 @@ class _ReaderScreenState extends State<ReaderScreen> {
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
   int _lastLineIndex = -1;
   int _lastPageIndex = -1;
+  bool _isInitialScrollDone = false;
+  bool _isPageReady = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _itemPositionsListener.itemPositions.addListener(_onItemsChanged);
+  }
+
+  void _onItemsChanged() {
+    if (!_isInitialScrollDone && _itemScrollController.isAttached) {
+      _isInitialScrollDone = true;
+      final appState = context.read<AppState>();
+      _itemScrollController.jumpTo(index: appState.currentLineIndex, alignment: 0.35);
+      _itemPositionsListener.itemPositions.removeListener(_onItemsChanged);
+    }
+  }
 
   @override
   void dispose() {
@@ -55,6 +73,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
       appState.nextLine();
     } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       appState.previousLine();
+    } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+      appState.nextPage();
+      if (!_isPlaying) {
+        _togglePlayPause();
+      }
     }
   }
 
@@ -250,32 +273,55 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final currentPage = appState.currentBookPages[appState.currentPageIndex];
     final progress = appState.currentLineIndex / (currentPage.length > 1 ? currentPage.length - 1 : 1);
 
-    // Calculate seconds per line and lines per second for the UI label
-    final double secondsPerLine = _speedMs / 1000;
-
     // Check if line or page changed to animate the scroll list
-    if (_lastLineIndex != appState.currentLineIndex || _lastPageIndex != appState.currentPageIndex) {
-      if (_itemScrollController.isAttached) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_itemScrollController.isAttached) {
-            _itemScrollController.scrollTo(
-              index: appState.currentLineIndex,
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOut,
-              alignment: 0.35, // Visually shift higher to balance the bottom pill
-            );
-          }
-        });
-      }
-      _lastLineIndex = appState.currentLineIndex;
+    if (_lastPageIndex != appState.currentPageIndex) {
       _lastPageIndex = appState.currentPageIndex;
+      _lastLineIndex = appState.currentLineIndex;
+      
+      _isPageReady = false; // Hide the list temporarily
+      
+      void jump() {
+        if (!mounted) return;
+        if (_itemScrollController.isAttached) {
+          double align = appState.currentLineIndex == 0 ? -0.15 : 0.35;
+          _itemScrollController.jumpTo(index: appState.currentLineIndex, alignment: align);
+          if (!_isInitialScrollDone) {
+            _isInitialScrollDone = true;
+          }
+          setState(() => _isPageReady = true);
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) => jump());
+        }
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) => jump());
+      
+    } else if (_isInitialScrollDone && _lastLineIndex != appState.currentLineIndex) {
+      _lastLineIndex = appState.currentLineIndex;
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_itemScrollController.isAttached) {
+          double align = appState.currentLineIndex == 0 ? -0.15 : 0.35;
+          _itemScrollController.scrollTo(
+            index: appState.currentLineIndex,
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOut,
+            alignment: align,
+          );
+        }
+      });
     }
+
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final bgColor = isDark 
+        ? Color.alphaBlend(primaryColor.withOpacity(0.04), const Color(0xFF09090B))
+        : Color.alphaBlend(primaryColor.withOpacity(0.04), const Color(0xFFFAFAFA));
 
     return KeyboardListener(
     focusNode: _keyboardFocusNode,
     autofocus: !isMobile, // was: isDesktop
     onKeyEvent: _handleKeyEvent,
     child : Scaffold(
+    backgroundColor: bgColor,
     appBar: PreferredSize(
     preferredSize: const Size.fromHeight(kToolbarHeight),
     child: IgnorePointer(
@@ -285,12 +331,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
         duration: const Duration(milliseconds: 600),
         curve: Curves.easeInOut,
         child: AppBar(
-          title: Text(appState.currentBookTitle),
-          backgroundColor: isDark ? Colors.grey.shade900 : Theme.of(context).colorScheme.secondaryContainer,
+          title: Text(
+            appState.currentBookTitle, 
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
+          ),
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
           actions: [
           if (!isMobile)
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Icons.keyboard_command_key_rounded),
             tooltip: 'Keyboard Shortcuts',
             onPressed: () => showKeyboardShortcutsDialog(context),
           ),
@@ -305,7 +357,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ),
           PopupMenuButton<int>(
             iconSize: isMobile ? 24 : 26,
-            icon: const Icon(Icons.palette_outlined),
+            icon: const Icon(Icons.palette_rounded),
             tooltip: 'Change Accent Color',
             onOpened: () => _handleScreenTap(isLandscape),
             onSelected: (index) {
@@ -338,7 +390,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           ),
           IconButton(
             iconSize: isMobile ? 24 : 26,
-            icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
+            icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
             onPressed: (){
               appState.toggleTheme();
               _handleScreenTap(isLandscape);
@@ -346,8 +398,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
             tooltip: 'Toggle Theme',
           ),
           IconButton(
-            iconSize: isMobile ? 18 : 24,
-            icon: const Icon(Icons.arrow_back_ios),
+            iconSize: isMobile ? 22 : 28,
+            icon: const Icon(Icons.chevron_left_rounded),
             onPressed: (){
               appState.previousPage();
               _handleScreenTap(isLandscape);
@@ -361,8 +413,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
             ),
           ),
           IconButton(
-            iconSize: isMobile ? 18 : 24,
-            icon: const Icon(Icons.arrow_forward_ios),
+            iconSize: isMobile ? 22 : 28,
+            icon: const Icon(Icons.chevron_right_rounded),
             onPressed: (){
               appState.nextPage();
               _handleScreenTap(isLandscape);
@@ -381,10 +433,43 @@ class _ReaderScreenState extends State<ReaderScreen> {
           onTap: ()=> _handleScreenTap(isLandscape),
           child: Stack(
             children:[
+              // Premium Background Glows
+              Positioned(
+                top: -150,
+                right: -100,
+                child: Container(
+                  width: 400,
+                  height: 400,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: primaryColor.withOpacity(isDark ? 0.08 : 0.08),
+                  ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: -100,
+                left: -100,
+                child: Container(
+                  width: 300,
+                  height: 300,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: primaryColor.withOpacity(isDark ? 0.05 : 0.05),
+                  ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+              ),
               Column(
           children: [
             if(!isLandscape)
-            LinearProgressIndicator(value: progress, backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2), color: Theme.of(context).colorScheme.primary),
+            LinearProgressIndicator(value: progress, backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.15), color: Theme.of(context).colorScheme.primary),
             
             Expanded(
               child: ShaderMask(
@@ -404,11 +489,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 blendMode: BlendMode.dstIn,
                 child: ScrollConfiguration(
                   behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-                  child: ScrollablePositionedList.builder(
-                    itemScrollController: _itemScrollController,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: _isPageReady ? 1.0 : 0.0,
+                    child: ScrollablePositionedList.builder(
+                      itemScrollController: _itemScrollController,
                     itemPositionsListener: _itemPositionsListener,
                     initialScrollIndex: appState.currentLineIndex,
-                    initialAlignment: 0.35,
+                    initialAlignment: appState.currentLineIndex == 0 ? -0.15 : 0.35,
                     physics: const NeverScrollableScrollPhysics(),
                     padding: EdgeInsets.symmetric(vertical: MediaQuery.of(context).size.height * 0.5),
                     itemCount: currentPage.length,
@@ -425,11 +513,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
                         child: AnimatedOpacity(
                           duration: const Duration(milliseconds: 300),
-                          opacity: distance > 1 ? 0.0 : (isActive ? 1.0 : 0.4),
+                          opacity: distance > 1 ? 0.0 : (isActive ? 1.0 : 0.6),
                           child: TweenAnimationBuilder<double>(
                             tween: Tween<double>(
-                              begin: isActive ? 0.0 : 2.0, 
-                              end: isActive ? 0.0 : 2.0
+                              begin: isActive ? 0.0 : 0.8, 
+                              end: isActive ? 0.0 : 0.8
                             ),
                             duration: const Duration(milliseconds: 300),
                             builder: (context, blurValue, child) {
@@ -440,16 +528,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             },
                             child: AnimatedScale(
                               duration: const Duration(milliseconds: 300),
-                              scale: isActive ? 1.0 : 0.7,
+                              scale: isActive ? 1.0 : 0.85,
                               curve: Curves.easeOutCubic,
                               child: Text(
                                 line,
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: appState.fontSize, // Fixed layout size prevents jumpiness!
-                                  height: 1.4,
-                                  fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-                                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                                style: GoogleFonts.lora(
+                                  fontSize: appState.fontSize,
+                                  height: 1.6,
+                                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                                  color: isActive 
+                                      ? (isDark ? Colors.white : Colors.black87)
+                                      : (isDark ? Colors.grey.shade600 : Colors.grey.shade400),
                                 ),
                               ),
                             ),
@@ -459,6 +549,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     );
                   },
                 ),
+              ),
               ),
               ),
             ),
@@ -549,14 +640,35 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ),
               if (!_isPlaying && appState.currentLineIndex == currentPage.length - 1)
                 Positioned(
-                  bottom: isLandscape ? 100 : 120,
+                  bottom: isLandscape ? 80 : 105, // Closer to the bottom pill
                   left: 0, right: 0,
                   child: Center(
-                    child: FilledButton.icon(
-                      onPressed: appState.nextPage,
-                      icon: const Icon(Icons.menu_book),
-                      label: const Text('Start Next Page'),
-                      style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade700),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        boxShadow: [
+                          BoxShadow(
+                            color: primaryColor.withOpacity(0.3),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
+                      ),
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          appState.nextPage();
+                          if (!_isPlaying) {
+                            _togglePlayPause();
+                          }
+                        },
+                        icon: const Icon(Icons.menu_book_rounded),
+                        label: const Text('Start Next Page', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                        ),
+                      ),
                     ),
                   ),
                 ),

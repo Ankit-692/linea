@@ -14,6 +14,8 @@ void showKeyboardShortcutsDialog(BuildContext context) {
           _ShortcutRow(keyLabel: '→', action: 'Next line'),
           SizedBox(height: 12),
           _ShortcutRow(keyLabel: '←', action: 'Previous line'),
+          SizedBox(height: 12),
+          _ShortcutRow(keyLabel: 'Enter', action: 'Next page'),
         ],
       ),
       actions: [

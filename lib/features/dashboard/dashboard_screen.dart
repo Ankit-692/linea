@@ -3,6 +3,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
+import 'dart:ui';
 import '../../core/state/app_state.dart';
 import '../../features/reader/models/book.dart';
 import '../reader/screens/reader_screen.dart';
@@ -10,10 +11,46 @@ import '../reader/services/file_parser_service.dart';
 import '../../features/reader/services/cache_service.dart';
 import '../../core/widgets/keyboard_shortcuts_dialog.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProviderStateMixin {
   bool get _isMobile => Platform.isAndroid || Platform.isIOS;
+
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+  late Animation<Offset> _slideAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1000),
+    );
+    _fadeAnimation = CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic);
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+      CurvedAnimation(parent: _animationController, curve: Curves.easeOutCubic),
+    );
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
 
   Future<void> _pickAndParseFile(BuildContext context) async {
     FilePickerResult? result = await FilePicker.pickFiles(
@@ -28,7 +65,9 @@ class DashboardScreen extends StatelessWidget {
       final String filePath = result.files.single.path!;
       final String fileName = result.files.single.name;
 
-      _openBook(context, filePath, fileName, 0, 0);
+      if (mounted) {
+        _openBook(context, filePath, fileName, 0, 0);
+      }
     }
   }
 
@@ -39,31 +78,35 @@ class DashboardScreen extends StatelessWidget {
     int startPage,
     int startLine,
   ) async {
-    // Check if file still exists on device
     if (!File(filePath).existsSync()) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('File not found. It may have been moved or deleted.'),
+          behavior: SnackBarBehavior.floating,
         ),
       );
-      // Optional: Remove from Hive box here
       return;
     }
 
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
+      builder: (context) => Center(
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: const CircularProgressIndicator(),
+        ),
+      ),
     );
 
     try {
-      List<List<String>>? extractedPages = await CacheService.loadBookCache(
-        filePath,
-      );
-      // 2. If no cache exists, parse it and then save it to the cache
+      List<List<String>>? extractedPages = await CacheService.loadBookCache(filePath);
       if (extractedPages == null) {
         extractedPages = await FileParserService.parseFile(filePath);
-        // Save it in the background so it doesn't hold up the UI
         CacheService.saveBookCache(filePath, extractedPages);
       }
       if (!context.mounted) return;
@@ -85,222 +128,257 @@ class DashboardScreen extends StatelessWidget {
     } catch (e) {
       if (!context.mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error: $e'),
+          behavior: SnackBarBehavior.floating,
+        )
+      );
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final box = Hive.box<Book>('booksBox');
-    final appState = context.watch<AppState>();
-    final isDark = appState.isDarkMode;
-    final colorScheme = Theme.of(context).colorScheme;
+  Widget _buildBackground(bool isDark, Color primaryColor) {
+    final bgColor = isDark 
+        ? Color.alphaBlend(primaryColor.withOpacity(0.04), const Color(0xFF09090B))
+        : Color.alphaBlend(primaryColor.withOpacity(0.04), const Color(0xFFFAFAFA));
 
-    return Scaffold(
-      backgroundColor: isDark ? Colors.black : const Color(0xFFF8F9FA),
-      appBar: AppBar(
-        title: const Text(
-          'Linea',
-          style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: -0.5),
-        ),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        surfaceTintColor: Colors.transparent,
-        actions: [
-          if (!_isMobile)
-            IconButton(
-              icon: const Icon(Icons.help_outline),
-              tooltip: 'Keyboard Shortcuts',
-              onPressed: () => showKeyboardShortcutsDialog(context),
-            ),
-          PopupMenuButton<int>(
-            icon: const Icon(Icons.palette_outlined),
-            tooltip: 'Change Accent Color',
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            onSelected: appState.setThemeColor,
-            itemBuilder: (context) => [
-              for (int i = 0; i < AppState.themeColors.length; i++)
-                PopupMenuItem(
-                  value: i,
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 24,
-                        height: 24,
-                        decoration: BoxDecoration(
-                          color: AppState.themeColors[i],
-                          shape: BoxShape.circle,
-                          border: appState.colorIndex == i
-                              ? Border.all(
-                                  color: Theme.of(context).colorScheme.onSurface,
-                                  width: 2,
-                                )
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        ['Mint', 'Purple', 'Royal Blue', 'Coral', 'Sage'][i],
-                        style: const TextStyle(fontWeight: FontWeight.w500),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
-          IconButton(
-            icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
-            onPressed: appState.toggleTheme,
-            tooltip: 'Toggle Theme',
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+    return Positioned.fill(
+      child: Container(
+        color: bgColor,
+        child: Stack(
           children: [
-            const SizedBox(height: 16),
-            // Modern Hero Card
-            InkWell(
-              onTap: () => _pickAndParseFile(context),
-              borderRadius: BorderRadius.circular(24),
+            Positioned(
+              top: -150,
+              right: -100,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+                width: 400,
+                height: 400,
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      colorScheme.primary,
-                      colorScheme.primary.withOpacity(0.7),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    if (!isDark)
-                      BoxShadow(
-                        color: colorScheme.primary.withOpacity(0.3),
-                        blurRadius: 24,
-                        offset: const Offset(0, 12),
-                      )
-                    else
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.4),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                  ],
+                  shape: BoxShape.circle,
+                  color: primaryColor.withOpacity(isDark ? 0.08 : 0.08),
                 ),
-                child: Column(
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
+                  child: Container(color: Colors.transparent),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: -100,
+              left: -100,
+              child: Container(
+                width: 300,
+                height: 300,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: primaryColor.withOpacity(isDark ? 0.05 : 0.05),
+                ),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+                  child: Container(color: Colors.transparent),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAppBar(BuildContext context, AppState appState, bool isDark) {
+    return SliverAppBar(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      surfaceTintColor: Colors.transparent,
+      pinned: true,
+      expandedHeight: 120,
+      flexibleSpace: FlexibleSpaceBar(
+        titlePadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        title: Text(
+          'Library',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: -1,
+            color: isDark ? Colors.white : Colors.black87,
+            fontSize: 24,
+          ),
+        ),
+      ),
+      actions: [
+        if (!_isMobile)
+          IconButton(
+            icon: const Icon(Icons.keyboard_command_key_rounded),
+            tooltip: 'Keyboard Shortcuts',
+            onPressed: () => showKeyboardShortcutsDialog(context),
+          ),
+        PopupMenuButton<int>(
+          icon: const Icon(Icons.palette_rounded),
+          tooltip: 'Theme Accent',
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+          onSelected: appState.setThemeColor,
+          itemBuilder: (context) => [
+            for (int i = 0; i < AppState.themeColors.length; i++)
+              PopupMenuItem(
+                value: i,
+                child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(16),
+                      width: 28,
+                      height: 28,
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: AppState.themeColors[i],
                         shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.add_rounded,
-                        color: Colors.white,
-                        size: 40,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Import PDF or EPUB',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
+                        border: appState.colorIndex == i
+                            ? Border.all(
+                                color: isDark ? Colors.white : Colors.black,
+                                width: 2.5,
+                              )
+                            : null,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(width: 16),
                     Text(
-                      'Start reading faster with RSVP',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.8),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      ['Mint', 'Purple', 'Royal Blue', 'Coral', 'Sage'][i],
+                      style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ],
                 ),
               ),
-            ),
-            const SizedBox(height: 40),
-            Row(
-              children: [
-                const Text(
-                  'Recent Books',
-                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+          ],
+        ),
+        IconButton(
+          icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
+          onPressed: appState.toggleTheme,
+          tooltip: 'Toggle Theme',
+        ),
+        const SizedBox(width: 12),
+      ],
+    );
+  }
+
+  Widget _buildHeroCard(BuildContext context, ColorScheme colorScheme, bool isDark) {
+    return BouncingButton(
+      onTap: () => _pickAndParseFile(context),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 32),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(36),
+          gradient: isDark 
+              ? const LinearGradient(
+                  colors: [Color(0xFF1E1E1E), Color(0xFF161616)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : LinearGradient(
+                  colors: [colorScheme.primary, colorScheme.primary.withOpacity(0.85)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                const Spacer(),
-                Icon(Icons.auto_stories_rounded, color: colorScheme.primary, size: 20),
-              ],
+          border: isDark ? Border.all(color: colorScheme.primary.withOpacity(0.3), width: 1.5) : null,
+          boxShadow: [
+            if (isDark)
+              BoxShadow(
+                color: colorScheme.primary.withOpacity(0.15),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              )
+            else ...[
+              BoxShadow(
+                color: colorScheme.primary.withOpacity(0.4),
+                blurRadius: 30,
+                offset: const Offset(0, 15),
+              ),
+              BoxShadow(
+                color: Colors.white.withOpacity(0.2),
+                blurRadius: 0,
+                spreadRadius: 1,
+                offset: const Offset(0, 1),
+              ),
+            ]
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: isDark ? colorScheme.primary.withOpacity(0.15) : Colors.white.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(
+                  color: isDark ? colorScheme.primary.withOpacity(0.3) : Colors.white.withOpacity(0.4), 
+                  width: 1.5
+                ),
+              ),
+              child: Icon(
+                Icons.add_rounded,
+                color: isDark ? colorScheme.primary : Colors.white,
+                size: 36,
+              ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(width: 24),
             Expanded(
-              child: ValueListenableBuilder(
-                valueListenable: box.listenable(),
-                builder: (context, Box<Book> currentBox, _) {
-                  if (currentBox.isEmpty) {
-                    return Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.menu_book_rounded, size: 64, color: Colors.grey.withOpacity(0.3)),
-                          const SizedBox(height: 16),
-                          Text(
-                            'No recent books yet.',
-                            style: TextStyle(
-                              color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Import Document',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'PDF or EPUB • Start reading with RSVP',
+                    style: TextStyle(
+                      color: isDark ? Colors.grey.shade400 : Colors.white.withOpacity(0.9),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-                  final books = currentBox.values.toList().reversed.toList();
+  Widget _buildBookItem(BuildContext context, Book book, bool isDark, ColorScheme colorScheme, Box<Book> box) {
+    final colors = [
+      Colors.blueAccent, Colors.purpleAccent, Colors.orangeAccent, Colors.tealAccent, Colors.pinkAccent
+    ];
+    final coverColor = colors[book.title.hashCode % colors.length];
 
-                  return ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: books.length,
-                    itemBuilder: (context, index) {
-                      final book = books[index];
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: isDark ? const Color(0xFF161616) : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            if (!isDark)
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
-                                blurRadius: 16,
-                                offset: const Offset(0, 4),
-                              ),
-                          ],
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(20),
-                            onTap: () {
-                              _openBook(
-                                context,
-                                book.filePath,
-                                book.title,
-                                book.currentPageIndex,
-                                book.currentLineIndex,
-                              );
-                            },
+    return BouncingButton(
+      onTap: () => _openBook(context, book.filePath, book.title, book.currentPageIndex, book.currentLineIndex),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20, left: 24, right: 24),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF18181B) : Colors.white,
+          borderRadius: BorderRadius.circular(28),
+          border: Border.all(
+            color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.05),
+          ),
+          boxShadow: [
+            if (!isDark)
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
+              ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(28),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
                             onLongPress: () {
                               showDialog(
                                 context: context,
@@ -317,79 +395,326 @@ class DashboardScreen extends StatelessWidget {
                                     ),
                                     FilledButton(
                                       onPressed: () {
-                                        currentBox.delete(book.filePath);
+                                        box.delete(book.filePath);
                                         Navigator.pop(context);
                                       },
-                                      style: FilledButton.styleFrom(backgroundColor: Colors.red.shade400, foregroundColor: Colors.white),
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: Colors.red.shade400,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
                                       child: const Text('Remove'),
                                     ),
                                   ],
                                 ),
                               );
                             },
+                            onTap: () => _openBook(context, book.filePath, book.title, book.currentPageIndex, book.currentLineIndex),
                             child: Padding(
-                              padding: const EdgeInsets.all(16.0),
+                              padding: const EdgeInsets.all(20.0),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 70,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [coverColor.withOpacity(0.7), coverColor],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: coverColor.withOpacity(0.3),
+                            blurRadius: 12,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          book.title.isNotEmpty ? book.title[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 32,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            book.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: isDark ? Colors.white : Colors.black87,
+                              height: 1.2,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final total = book.totalPages > 0 ? book.totalPages : 1;
+                              final progress = (book.currentPageIndex + 1) / total;
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        '${(progress * 100).toStringAsFixed(0)}% Read',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: colorScheme.primary,
+                                        ),
+                                      ),
+                                      Text(
+                                        'Page ${book.currentPageIndex + 1} of $total',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                          color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    height: 6,
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      color: isDark ? Colors.white.withOpacity(0.08) : Colors.black.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: FractionallySizedBox(
+                                      alignment: Alignment.centerLeft,
+                                      widthFactor: progress.clamp(0.0, 1.0),
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: colorScheme.primary,
+                                          borderRadius: BorderRadius.circular(3),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: colorScheme.primary.withOpacity(0.4),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 1),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 48,
+                      height: 48,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.arrow_forward_rounded,
+                        size: 20,
+                        color: isDark ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final box = Hive.box<Book>('booksBox');
+    final appState = context.watch<AppState>();
+    final isDark = appState.isDarkMode;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          _buildBackground(isDark, colorScheme.primary),
+          FadeTransition(
+            opacity: _fadeAnimation,
+            child: SlideTransition(
+              position: _slideAnimation,
+              child: ValueListenableBuilder<Box<Book>>(
+                valueListenable: box.listenable(),
+                builder: (context, currentBox, _) {
+                  final books = currentBox.values.toList().reversed.toList();
+                  
+                  return CustomScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    slivers: [
+                      _buildAppBar(context, appState, isDark),
+                      SliverToBoxAdapter(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                              child: Text(
+                                '${_getGreeting()},',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                  color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                            _buildHeroCard(context, colorScheme, isDark),
+                            const SizedBox(height: 48),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 24.0),
                               child: Row(
                                 children: [
-                                  Container(
-                                    width: 56,
-                                    height: 56,
-                                    decoration: BoxDecoration(
-                                      color: colorScheme.primary.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    child: Icon(
-                                      Icons.book_rounded,
-                                      color: colorScheme.primary,
-                                      size: 28,
+                                  Text(
+                                    'Continue Reading',
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                      color: isDark ? Colors.white : Colors.black87,
+                                      letterSpacing: -0.5,
                                     ),
                                   ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          book.title,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Page ${book.currentPageIndex + 1} • Line ${book.currentLineIndex + 1}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                                  const Spacer(),
+                                  Icon(Icons.auto_stories_rounded, color: colorScheme.primary, size: 24),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
+                      ),
+                      if (books.isEmpty)
+                        SliverToBoxAdapter(
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 48.0),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
                                   Container(
-                                    padding: const EdgeInsets.all(8),
+                                    padding: const EdgeInsets.all(24),
                                     decoration: BoxDecoration(
-                                      color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                                      color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
                                       shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                                    child: Icon(Icons.menu_book_rounded, size: 48, color: isDark ? Colors.grey.shade600 : Colors.grey.shade400),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Text(
+                                    'No books yet',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      color: isDark ? Colors.grey.shade300 : Colors.grey.shade800,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Import a document to get started',
+                                    style: TextStyle(
+                                      color: isDark ? Colors.grey.shade500 : Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
                           ),
+                        )
+                      else
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              return _buildBookItem(context, books[index], isDark, colorScheme, currentBox);
+                            },
+                            childCount: books.length,
+                          ),
                         ),
-                      );
-                    },
+                      const SliverToBoxAdapter(child: SizedBox(height: 48)),
+                    ],
                   );
                 },
               ),
             ),
-          ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class BouncingButton extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  
+  const BouncingButton({super.key, required this.child, required this.onTap});
+
+  @override
+  State<BouncingButton> createState() => _BouncingButtonState();
+}
+
+class _BouncingButtonState extends State<BouncingButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 150));
+    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.96).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTapDown: (_) => _controller.forward(),
+        onTapUp: (_) {
+          _controller.reverse();
+          widget.onTap();
+        },
+        onTapCancel: () => _controller.reverse(),
+        child: ScaleTransition(
+          scale: _scaleAnimation,
+          child: widget.child,
         ),
       ),
     );
