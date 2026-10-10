@@ -204,6 +204,15 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
         startLine = existingBook.currentLineIndex;
         
         if (existingKey != savedPath) {
+          final file = File(existingKey as String);
+          if (await file.exists()) {
+            try {
+              await file.delete();
+            } catch (e) {
+              // Ignore if unable to delete
+            }
+          }
+          await CacheService.deleteBookCache(existingKey);
           box.delete(existingKey);
         }
 
@@ -545,9 +554,26 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
                                       child: const Text('Cancel'),
                                     ),
                                     FilledButton(
-                                      onPressed: () {
+                                      onPressed: () async {
+                                        // Delete the physical file
+                                        final file = File(book.filePath);
+                                        if (await file.exists()) {
+                                          try {
+                                            await file.delete();
+                                          } catch (e) {
+                                            // Ignore if unable to delete
+                                          }
+                                        }
+
+                                        // Delete the cached parsed text data
+                                        await CacheService.deleteBookCache(book.filePath);
+
+                                        // Remove from library
                                         box.delete(book.filePath);
-                                        Navigator.pop(context);
+
+                                        if (context.mounted) {
+                                          Navigator.pop(context);
+                                        }
                                       },
                                       style: FilledButton.styleFrom(
                                         backgroundColor: Colors.red.shade400,

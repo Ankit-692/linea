@@ -160,7 +160,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
         return Consumer<AppState>(
           builder: (context, appState, child) {
             final isDark = appState.isDarkMode;
-            final double secondsPerLine = _speedMs / 1000;
             return Container(
               padding: const EdgeInsets.all(24.0),
               decoration: BoxDecoration(
