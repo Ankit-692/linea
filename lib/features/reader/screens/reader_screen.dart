@@ -9,6 +9,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:ui';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/widgets/keyboard_shortcuts_dialog.dart';
+import '../../../core/widgets/theme_picker_button.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key});
@@ -25,8 +26,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _isPlaying = false;
   final FocusNode _keyboardFocusNode = FocusNode(); // add this
   final bool isMobile = Platform.isAndroid || Platform.isIOS;
-  // Speed setting: milliseconds per line. Default is 2500ms (2.5 seconds per line)
-  int _speedMs = Hive.box('settingsBox').get('speedMs', defaultValue: 2500); 
+  // Speed setting: Words Per Minute (WPM). Default is 200 WPM
+  int _wpm = Hive.box('settingsBox').get('wpm', defaultValue: 200); 
 
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
@@ -60,7 +61,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _keyboardFocusNode.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -74,12 +74,16 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _togglePlayPause();
     } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
       appState.nextLine();
+      if (_isPlaying) _scheduleNextLine();
     } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       appState.previousLine();
+      if (_isPlaying) _scheduleNextLine();
     } else if (event.logicalKey == LogicalKeyboardKey.enter) {
       appState.nextPage();
       if (!_isPlaying) {
         _togglePlayPause();
+      } else {
+        _scheduleNextLine();
       }
     }
   }
@@ -97,23 +101,59 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _startTimer() {
+    _scheduleNextLine();
+  }
+
+  void _scheduleNextLine() {
     _timer?.cancel();
-    _timer = Timer.periodic(Duration(milliseconds: _speedMs), (timer) {
-      final appState = context.read<AppState>();
-      
+    if (!_isPlaying || !mounted) return;
+
+    final appState = context.read<AppState>();
+    
+    if (appState.currentBookPages.isEmpty) return;
+    
+    final currentPage = appState.currentBookPages[appState.currentPageIndex];
+    if (currentPage.isEmpty) return;
+    
+    final currentLine = currentPage[appState.currentLineIndex];
+    
+    final String trimmedLine = currentLine.trim();
+    final int wordCount = trimmedLine.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).length;
+    final int charCount = trimmedLine.length;
+    
+    // Standardize long words by assuming an average word length of 5 characters.
+    double effectiveWords = wordCount.toDouble();
+    double charBasedWords = charCount / 5.0;
+    
+    // Use whichever is larger to account for lines with few but very long words
+    if (charBasedWords > effectiveWords) {
+      effectiveWords = charBasedWords;
+    }
+    
+    // Add a base padding (e.g. 1.5 words) to every line to account for eye 
+    // movement/transition time, ensuring very short lines aren't too fast.
+    effectiveWords += 1.5;
+    
+    // Duration formula based on effective words
+    int durationMs = ((effectiveWords / _wpm) * 60000).toInt();
+
+    _timer = Timer(Duration(milliseconds: durationMs), () {
+      if (!mounted) return;
       bool advanced = appState.nextLine();
       
       if (!advanced) {
         _togglePlayPause(); // Pause automatically at the end of the page
+      } else {
+        _scheduleNextLine();
       }
     });
   }
 
-  void _updateSpeed(double newSpeedMs) {
+  void _updateSpeed(double newWpm) {
     setState(() {
-      _speedMs = newSpeedMs.toInt();
+      _wpm = newWpm.toInt();
     });
-    Hive.box('settingsBox').put('speedMs', _speedMs);
+    Hive.box('settingsBox').put('wpm', _wpm);
     if (_isPlaying) {
       _startTimer(); // Restarts timer instantly with the new duration
     }
@@ -172,7 +212,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   children: [
                     Container(
                       width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24),
-                      decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2)),
+                      decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)),
                     ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -208,16 +248,15 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     const Divider(height: 16),
                     StatefulBuilder(
                       builder: (context, setSheetState) {
-                        final double currentSecondsPerLine = _speedMs / 1000;
                         return Column(
                           children: [
-                            Text('Speed: ${currentSecondsPerLine.toStringAsFixed(1)}s / line', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            Text('Speed: $_wpm WPM', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                             Slider(
-                              value: _speedMs.toDouble(),
-                              min: 500, max: 6000,
+                              value: _wpm.toDouble(),
+                              min: 50, max: 1000,
                               activeColor: Theme.of(context).colorScheme.primary,
                               onChanged: (val) {
-                                setSheetState(() => _speedMs = val.toInt());
+                                setSheetState(() => _wpm = val.toInt());
                                 _updateSpeed(val);
                               },
                             ),
@@ -230,8 +269,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: const [
-                          Text('Fast (0.5s)', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                          Text('Slow (6.0s)', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          Text('Slow (50)', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          Text('Fast (1000)', style: TextStyle(color: Colors.grey, fontSize: 14)),
                         ],
                       ),
                     ),
@@ -322,8 +361,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
 
     final primaryColor = Theme.of(context).colorScheme.primary;
     final bgColor = isDark 
-        ? Color.alphaBlend(primaryColor.withOpacity(0.04), const Color(0xFF09090B))
-        : Color.alphaBlend(primaryColor.withOpacity(0.04), const Color(0xFFFAFAFA));
+        ? Color.alphaBlend(primaryColor.withValues(alpha: 0.04), const Color(0xFF09090B))
+        : Color.alphaBlend(primaryColor.withValues(alpha: 0.04), const Color(0xFFFAFAFA));
 
     return KeyboardListener(
     focusNode: _keyboardFocusNode,
@@ -365,36 +404,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Theme.of(context).colorScheme.primary, fontSize: isMobile ? 12:16),
             ),
           ),
-          PopupMenuButton<int>(
-            iconSize: isMobile ? 24 : 26,
-            icon: const Icon(Icons.palette_rounded),
-            tooltip: 'Change Accent Color',
-            onSelected: (index) {
-              appState.setThemeColor(index);
-            },
-            itemBuilder: (context) => [
-              for (int i = 0; i < AppState.themeColors.length; i++)
-                PopupMenuItem(
-                  value: i,
-                  child: Row(
-                    children: [
-                      Container(
-                        width: isMobile ? 18:24,
-                        height: isMobile ? 18:24,
-                        decoration: BoxDecoration(
-                          color: AppState.themeColors[i],
-                          shape: BoxShape.circle,
-                          border: appState.colorIndex == i
-                              ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 2)
-                              : null,
-                        ),
-                      ),
-                      SizedBox(width: isMobile ? 8:12),
-                      Text(['Mint', 'Purple', 'Royal Blue', 'Coral', 'Sage'][i]),
-                    ],
-                  ),
-                ),
-            ],
+          ThemePickerButton(
+            appState: appState, 
+            isDark: isDark, 
+            customIconSize: isMobile ? 24 : 26,
           ),
           IconButton(
             iconSize: isMobile ? 24 : 26,
@@ -440,9 +453,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
             _dragAccumulator -= details.primaryDelta ?? 0.0;
             if (_dragAccumulator > _dragThreshold) {
               appState.nextLine();
+              if (_isPlaying) _scheduleNextLine();
               _dragAccumulator = 0.0;
             } else if (_dragAccumulator < -_dragThreshold) {
               appState.previousLine();
+              if (_isPlaying) _scheduleNextLine();
               _dragAccumulator = 0.0;
             }
           },
@@ -457,7 +472,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   height: 400,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: primaryColor.withOpacity(isDark ? 0.08 : 0.08),
+                    color: primaryColor.withValues(alpha: isDark ? 0.08 : 0.08),
                   ),
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
@@ -473,7 +488,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   height: 300,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: primaryColor.withOpacity(isDark ? 0.05 : 0.05),
+                    color: primaryColor.withValues(alpha: isDark ? 0.05 : 0.05),
                   ),
                   child: BackdropFilter(
                     filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
@@ -484,7 +499,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
               Column(
           children: [
             if(!isLandscape)
-            LinearProgressIndicator(value: progress, backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.15), color: Theme.of(context).colorScheme.primary),
+            LinearProgressIndicator(value: progress, backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15), color: Theme.of(context).colorScheme.primary),
             
             Expanded(
               child: ShaderMask(
@@ -582,7 +597,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           borderRadius: BorderRadius.circular(40),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(isDark ? 0.4 : 0.15),
+                              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
                               blurRadius: 30,
                               offset: const Offset(0, 12),
                             ),
@@ -595,10 +610,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                               decoration: BoxDecoration(
-                                color: isDark ? Colors.black.withOpacity(0.5) : Colors.white.withOpacity(0.8),
+                                color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.8),
                                 borderRadius: BorderRadius.circular(40),
                                 border: Border.all(
-                                  color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.08),
+                                  color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.08),
                                   width: 1,
                                 ),
                               ),
@@ -615,7 +630,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             IconButton(
                               iconSize: 28,
                               icon: Icon(Icons.fast_rewind_rounded, color: Theme.of(context).colorScheme.primary),
-                              onPressed: () { appState.previousLine(); },
+                              onPressed: () { 
+                                appState.previousLine(); 
+                                if (_isPlaying) _scheduleNextLine();
+                              },
                             ),
                             const SizedBox(width: 8),
                             FloatingActionButton(
@@ -630,7 +648,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             IconButton(
                               iconSize: 28,
                               icon: Icon(Icons.fast_forward_rounded, color: Theme.of(context).colorScheme.primary),
-                              onPressed: () { appState.nextLine(); },
+                              onPressed: () { 
+                                appState.nextLine(); 
+                                if (_isPlaying) _scheduleNextLine();
+                              },
                             ),
                             if (isMobile) ...[
                               const SizedBox(width: 16),
@@ -663,11 +684,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         child: Container(
                           decoration: BoxDecoration(
                             color: isDark 
-                                ? primaryColor.withOpacity(0.25) 
-                                : primaryColor.withOpacity(0.15),
+                                ? primaryColor.withValues(alpha: 0.25) 
+                                : primaryColor.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: primaryColor.withOpacity(isDark ? 0.4 : 0.3),
+                              color: primaryColor.withValues(alpha: isDark ? 0.4 : 0.3),
                               width: 1,
                             ),
                           ),
@@ -679,6 +700,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                                 appState.nextPage();
                                 if (!_isPlaying) {
                                   _togglePlayPause();
+                                } else {
+                                  _scheduleNextLine();
                                 }
                               },
                               child: Padding(
@@ -689,7 +712,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                                     Icon(
                                       Icons.menu_book_rounded, 
                                       size: 20, 
-                                      color: isDark ? primaryColor : primaryColor.withOpacity(0.9),
+                                      color: isDark ? primaryColor : primaryColor.withValues(alpha: 0.9),
                                     ),
                                     const SizedBox(width: 10),
                                     Text(
@@ -697,7 +720,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700, 
                                         fontSize: 15,
-                                        color: isDark ? primaryColor : primaryColor.withOpacity(0.9),
+                                        color: isDark ? primaryColor : primaryColor.withValues(alpha: 0.9),
                                         letterSpacing: -0.3,
                                       )
                                     ),

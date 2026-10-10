@@ -14,8 +14,8 @@ class AppState extends ChangeNotifier {
     Color(0xFF00C9A7), // Modern Mint
     Color(0xFF845EC2), // Modern Purple
     Color(0xFF2C73D2), // Royal Blue
-    Color(0xFFFF9671), // Coral
-    Color(0xFF4D8076), // Elegant Sage
+    Color(0xFFF472B6), // Blush
+    Color(0xFFE2725B), // Terracotta
   ];
 
   Color get currentThemeColor => themeColors[_colorIndex];

@@ -78,7 +78,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         height: 8,
                         width: _currentPage == index ? 32 : 8,
                         decoration: BoxDecoration(
-                          color: _currentPage == index ? colorScheme.primary : colorScheme.primary.withOpacity(0.2),
+                          color: _currentPage == index ? colorScheme.primary : colorScheme.primary.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
@@ -160,7 +160,7 @@ class _OnboardingPage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(32),
             decoration: BoxDecoration(
-              color: colorScheme.primary.withOpacity(0.1),
+              color: colorScheme.primary.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, size: 80, color: colorScheme.primary),
@@ -184,7 +184,7 @@ class _OnboardingPage extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               height: 1.6,
-              color: Theme.of(context).textTheme.bodyMedium?.color?.withOpacity(0.7),
+              color: Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.7),
             ),
           ),
         ],
