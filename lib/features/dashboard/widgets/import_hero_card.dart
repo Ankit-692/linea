@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'dart:io';
 import 'bouncing_button.dart';
 
 class ImportHeroCard extends StatelessWidget {
@@ -12,6 +14,8 @@ class ImportHeroCard extends StatelessWidget {
     required this.isDark,
     required this.onImportTap,
   });
+
+  bool get _isDesktop => !kIsWeb && (Platform.isMacOS || Platform.isWindows || Platform.isLinux);
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +102,9 @@ class ImportHeroCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'PDF or EPUB • Start reading with RSVP',
+                    _isDesktop
+                        ? 'PDF or EPUB • Drag & drop or click to open'
+                        : 'PDF or EPUB • Start reading with RSVP',
                     style: TextStyle(
                       color: isDark ? Colors.grey.shade400 : Colors.white.withValues(alpha: 0.9),
                       fontSize: 14,
