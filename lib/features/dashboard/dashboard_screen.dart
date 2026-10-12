@@ -284,9 +284,19 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
     final cleanPath = _normalizeFilePath(filePath);
     if (!File(cleanPath).existsSync()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('File not found. It may have been moved or deleted.'),
+        SnackBar(
+          content: const Text('File not found. It may have been moved or deleted.'),
           behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Remove',
+            onPressed: () {
+              final box = Hive.box<Book>('booksBox');
+              box.delete(filePath);
+              box.delete(cleanPath);
+              CacheService.deleteBookCache(filePath);
+              CacheService.deleteBookCache(cleanPath);
+            },
+          ),
         ),
       );
       return;
