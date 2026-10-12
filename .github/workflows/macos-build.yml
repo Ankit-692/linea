@@ -12,6 +12,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract version from pubspec.yaml
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d '[:space:]')
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Detected version: $VERSION"
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -52,7 +58,7 @@ jobs:
       - name: Upload .app zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Linea-macOS-app
+          name: Linea-macOS-${{ env.APP_VERSION }}-app
           path: build/macos/Build/Products/Release/Linea-macOS.zip
           retention-days: 14
 
@@ -106,6 +112,6 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Linea-macOS-dmg
+          name: Linea-macOS-${{ env.APP_VERSION }}-dmg
           path: build/macos/Build/Products/Release/Linea.dmg
           retention-days: 14

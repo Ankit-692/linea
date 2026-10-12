@@ -33,13 +33,21 @@ jobs:
       - name: Install Inno Setup
         run: choco install innosetup -y
 
+      - name: Extract version from pubspec.yaml
+        shell: pwsh
+        run: |
+          $verLine = Get-Content pubspec.yaml | Select-String "^version:\s*([^\s+]+)"
+          $version = $verLine.Matches.Groups[1].Value.Trim()
+          Write-Host "Detected version: $version"
+          echo "APP_VERSION=$version" >> $env:GITHUB_ENV
+
       - name: Compile installer
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "windows\installer.iss"
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$env:APP_VERSION" "windows\installer.iss"
         shell: pwsh
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: windows-setup
+          name: Linea-Windows-${{ env.APP_VERSION }}-Setup
           path: windows/Output/*.exe
