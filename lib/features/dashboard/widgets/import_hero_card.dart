@@ -19,11 +19,12 @@ class ImportHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BouncingButton(
-      onTap: onImportTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 24),
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: BouncingButton(
+        onTap: onImportTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 24),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(36),
           gradient: isDark 
@@ -117,6 +118,7 @@ class ImportHeroCard extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 }

@@ -34,12 +34,11 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onTapDown: (_) => _controller.forward(),
-        onTapUp: (_) {
-          _controller.reverse();
-          widget.onTap();
-        },
+        onTapUp: (_) => _controller.reverse(),
         onTapCancel: () => _controller.reverse(),
+        onTap: widget.onTap,
         child: ScaleTransition(
           scale: _scaleAnimation,
           child: widget.child,

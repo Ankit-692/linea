@@ -257,19 +257,34 @@ class _DashboardScreenState extends State<DashboardScreen> with SingleTickerProv
   }
 
   Future<void> _pickAndParseFile(BuildContext context) async {
-    FilePickerResult? result = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf', 'epub'],
-      lockParentWindow: true,
-      allowMultiple: false,
-      withData: false,
-    );
+    try {
+      if (!kIsWeb && Platform.isMacOS) {
+        await FilePicker.skipEntitlementsChecks();
+      }
 
-    if (result != null && result.files.single.path != null) {
-      final String originalPath = result.files.single.path!;
-      final String fileName = result.files.single.name;
+      FilePickerResult? result = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf', 'epub', 'PDF', 'EPUB'],
+        lockParentWindow: true,
+        allowMultiple: false,
+        withData: false,
+      );
+
+      if (result != null && result.files.isNotEmpty && result.files.first.path != null) {
+        final String originalPath = result.files.first.path!;
+        final String fileName = result.files.first.name;
+        if (context.mounted) {
+          await _handleFileImport(context, originalPath, fileName);
+        }
+      }
+    } catch (e) {
+      debugPrint('Error picking file: $e');
       if (context.mounted) {
-        await _handleFileImport(context, originalPath, fileName);
+        ToastUtils.showTopToast(
+          context,
+          'Import Failed',
+          'Could not open file picker: $e',
+        );
       }
     }
   }
