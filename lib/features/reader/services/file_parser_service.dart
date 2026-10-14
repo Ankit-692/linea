@@ -1,9 +1,12 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'package:flutter/foundation.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:epubx/epubx.dart' as epubx;
 
 class FileParserService {
+  static const int minWordsPerLine = 7;
+  static const int maxWordsPerLine = 10;
   
   // Master entry point that detects file type
   static Future<List<List<String>>> parseFile(String filePath) async {
@@ -33,6 +36,13 @@ class FileParserService {
     return false;
   }
 
+  @visibleForTesting
+  static List<String> chunkBlockIntoLines(String block) => _chunkBlockIntoLines(block);
+
+  @visibleForTesting
+  static void paginateLines(List<String> lines, List<List<String>> allPages, {int linesPerPage = 30}) =>
+      _paginateLines(lines, allPages, linesPerPage: linesPerPage);
+
   static List<String> _chunkBlockIntoLines(String block) {
     String cleanBlock = block.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (cleanBlock.isEmpty) return [];
@@ -51,12 +61,14 @@ class FileParserService {
                            word.endsWith(':') || word.endsWith('?') || word.endsWith('!') || 
                            word.endsWith('"') || word.endsWith('”');
       
-      bool forceBreak = currentLineWords.length >= 12; 
-      bool smartBreak = currentLineWords.length >= 6 && isPunctuation;
+      bool forceBreak = currentLineWords.length >= maxWordsPerLine; 
+      bool smartBreak = currentLineWords.length >= minWordsPerLine && isPunctuation;
       
       if (forceBreak || smartBreak || i == words.length - 1) {
-        lines.add(currentLineWords.join(' '));
-        currentLineWords = [];
+        if (currentLineWords.isNotEmpty) {
+          lines.add(currentLineWords.join(' '));
+          currentLineWords = [];
+        }
       }
     }
     return lines;
