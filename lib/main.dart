@@ -1,26 +1,37 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
 import 'features/reader/models/book.dart';
 import 'core/state/app_state.dart';
 import 'features/dashboard/dashboard_screen.dart';
 import 'features/onboarding/onboarding_screen.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  LicenseRegistry.addLicense(() async* {
+    final license = await rootBundle.loadString('assets/google_fonts/OFL.txt');
+    yield LicenseEntryWithLineBreaks(['google_fonts'], license);
+  });
+
   final appDir = await getApplicationSupportDirectory();
   Hive.init(appDir.path);
   Hive.registerAdapter(BookAdapter());
-  
+
   // Open the boxes
   await Hive.openBox<Book>('booksBox');
   await Hive.openBox('settingsBox'); // New box for app settings/flags
 
   // Check if onboarding is complete
   final settingsBox = Hive.box('settingsBox');
-  final bool hasSeenOnboarding = settingsBox.get('hasSeenOnboarding', defaultValue: false);
+  final bool hasSeenOnboarding = settingsBox.get(
+    'hasSeenOnboarding',
+    defaultValue: false,
+  );
 
   runApp(
     ChangeNotifierProvider(
@@ -45,16 +56,16 @@ class LineaApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: appState.currentThemeColor, 
-          brightness: Brightness.light
+          seedColor: appState.currentThemeColor,
+          brightness: Brightness.light,
         ),
         fontFamily: GoogleFonts.outfit().fontFamily,
         useMaterial3: true,
       ),
       darkTheme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: appState.currentThemeColor, 
-          brightness: Brightness.dark
+          seedColor: appState.currentThemeColor,
+          brightness: Brightness.dark,
         ),
         fontFamily: GoogleFonts.outfit().fontFamily,
         useMaterial3: true,

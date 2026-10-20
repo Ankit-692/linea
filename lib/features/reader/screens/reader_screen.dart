@@ -7,7 +7,9 @@ import 'dart:io' show Platform;
 import 'package:flutter/services.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:ui';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../core/widgets/keyboard_shortcuts_dialog.dart';
+import '../../../core/widgets/theme_picker_button.dart';
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key});
@@ -24,13 +26,33 @@ class _ReaderScreenState extends State<ReaderScreen> {
   bool _isPlaying = false;
   final FocusNode _keyboardFocusNode = FocusNode(); // add this
   final bool isMobile = Platform.isAndroid || Platform.isIOS;
-  // Speed setting: milliseconds per line. Default is 2500ms (2.5 seconds per line)
-  int _speedMs = Hive.box('settingsBox').get('speedMs', defaultValue: 2500); 
+  // Speed setting: Words Per Minute (WPM). Default is 200 WPM
+  int _wpm = Hive.box('settingsBox').get('wpm', defaultValue: 200); 
 
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
   int _lastLineIndex = -1;
   int _lastPageIndex = -1;
+  double _lastFontSize = -1.0;
+  bool _isInitialScrollDone = false;
+  bool _isPageReady = true;
+  double _dragAccumulator = 0.0;
+  final double _dragThreshold = 40.0; // swipe distance required to change line
+
+  @override
+  void initState() {
+    super.initState();
+    _itemPositionsListener.itemPositions.addListener(_onItemsChanged);
+  }
+
+  void _onItemsChanged() {
+    if (!_isInitialScrollDone && _itemScrollController.isAttached) {
+      _isInitialScrollDone = true;
+      final appState = context.read<AppState>();
+      _itemScrollController.jumpTo(index: appState.currentLineIndex, alignment: 0.35);
+      _itemPositionsListener.itemPositions.removeListener(_onItemsChanged);
+    }
+  }
 
   @override
   void dispose() {
@@ -39,7 +61,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
     _keyboardFocusNode.dispose();
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     super.dispose();
   }
 
@@ -53,8 +74,17 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _togglePlayPause();
     } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
       appState.nextLine();
+      if (_isPlaying) _scheduleNextLine();
     } else if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
       appState.previousLine();
+      if (_isPlaying) _scheduleNextLine();
+    } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+      appState.nextPage();
+      if (!_isPlaying) {
+        _togglePlayPause();
+      } else {
+        _scheduleNextLine();
+      }
     }
   }
 
@@ -71,23 +101,59 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _startTimer() {
+    _scheduleNextLine();
+  }
+
+  void _scheduleNextLine() {
     _timer?.cancel();
-    _timer = Timer.periodic(Duration(milliseconds: _speedMs), (timer) {
-      final appState = context.read<AppState>();
-      
+    if (!_isPlaying || !mounted) return;
+
+    final appState = context.read<AppState>();
+    
+    if (appState.currentBookPages.isEmpty) return;
+    
+    final currentPage = appState.currentBookPages[appState.currentPageIndex];
+    if (currentPage.isEmpty) return;
+    
+    final currentLine = currentPage[appState.currentLineIndex];
+    
+    final String trimmedLine = currentLine.trim();
+    final int wordCount = trimmedLine.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).length;
+    final int charCount = trimmedLine.length;
+    
+    // Standardize long words by assuming an average word length of 5 characters.
+    double effectiveWords = wordCount.toDouble();
+    double charBasedWords = charCount / 5.0;
+    
+    // Use whichever is larger to account for lines with few but very long words
+    if (charBasedWords > effectiveWords) {
+      effectiveWords = charBasedWords;
+    }
+    
+    // Add a base padding (e.g. 1.5 words) to every line to account for eye 
+    // movement/transition time, ensuring very short lines aren't too fast.
+    effectiveWords += 1.5;
+    
+    // Duration formula based on effective words
+    int durationMs = ((effectiveWords / _wpm) * 60000).toInt();
+
+    _timer = Timer(Duration(milliseconds: durationMs), () {
+      if (!mounted) return;
       bool advanced = appState.nextLine();
       
       if (!advanced) {
         _togglePlayPause(); // Pause automatically at the end of the page
+      } else {
+        _scheduleNextLine();
       }
     });
   }
 
-  void _updateSpeed(double newSpeedMs) {
+  void _updateSpeed(double newWpm) {
     setState(() {
-      _speedMs = newSpeedMs.toInt();
+      _wpm = newWpm.toInt();
     });
-    Hive.box('settingsBox').put('speedMs', _speedMs);
+    Hive.box('settingsBox').put('wpm', _wpm);
     if (_isPlaying) {
       _startTimer(); // Restarts timer instantly with the new duration
     }
@@ -116,20 +182,13 @@ class _ReaderScreenState extends State<ReaderScreen> {
   }
 
   void _resetHideControlsTimer(bool isLandscape) {
-  _hideControlsTimer?.cancel();
-  if (isLandscape) {
-    _hideControlsTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted) setState(() => _controlsVisible = false);
-        _updateSystemUI(isLandscape);
-      });
-    }
+    // No longer auto-hiding after 3 seconds.
   }
 
   void _handleScreenTap(bool isLandscape) {
     if (!isLandscape) return;
-    setState(() => _controlsVisible = true);
+    setState(() => _controlsVisible = !_controlsVisible);
     _updateSystemUI(isLandscape);
-    _resetHideControlsTimer(true);
   }
 
   void _showSettingsSheet(BuildContext context) {
@@ -141,7 +200,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
         return Consumer<AppState>(
           builder: (context, appState, child) {
             final isDark = appState.isDarkMode;
-            final double secondsPerLine = _speedMs / 1000;
             return Container(
               padding: const EdgeInsets.all(24.0),
               decoration: BoxDecoration(
@@ -154,7 +212,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                   children: [
                     Container(
                       width: 40, height: 4, margin: const EdgeInsets.only(bottom: 24),
-                      decoration: BoxDecoration(color: Colors.grey.withOpacity(0.3), borderRadius: BorderRadius.circular(2)),
+                      decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2)),
                     ),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -188,17 +246,21 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       ],
                     ),
                     const Divider(height: 16),
-                    Text('Speed: ${secondsPerLine.toStringAsFixed(1)}s / line', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                     StatefulBuilder(
                       builder: (context, setSheetState) {
-                        return Slider(
-                          value: _speedMs.toDouble(),
-                          min: 500, max: 6000,
-                          activeColor: Theme.of(context).colorScheme.primary,
-                          onChanged: (val) {
-                            setSheetState(() => _speedMs = val.toInt());
-                            _updateSpeed(val);
-                          },
+                        return Column(
+                          children: [
+                            Text('Speed: $_wpm WPM', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                            Slider(
+                              value: _wpm.toDouble(),
+                              min: 50, max: 1000,
+                              activeColor: Theme.of(context).colorScheme.primary,
+                              onChanged: (val) {
+                                setSheetState(() => _wpm = val.toInt());
+                                _updateSpeed(val);
+                              },
+                            ),
+                          ],
                         );
                       }
                     ),
@@ -207,8 +269,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: const [
-                          Text('Fast (0.5s)', style: TextStyle(color: Colors.grey, fontSize: 14)),
-                          Text('Slow (6.0s)', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          Text('Slow (50)', style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          Text('Fast (1000)', style: TextStyle(color: Colors.grey, fontSize: 14)),
                         ],
                       ),
                     ),
@@ -230,8 +292,11 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final orientation = MediaQuery.of(context).orientation;
     final isLandscape = isMobile && orientation == Orientation.landscape;
 
-    if (_lastOrientation != orientation) {
+    bool layoutChanged = false;
+    if (_lastOrientation != orientation || _lastFontSize != appState.fontSize) {
       _lastOrientation = orientation;
+      _lastFontSize = appState.fontSize;
+      layoutChanged = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() => _controlsVisible = true);
@@ -250,32 +315,62 @@ class _ReaderScreenState extends State<ReaderScreen> {
     final currentPage = appState.currentBookPages[appState.currentPageIndex];
     final progress = appState.currentLineIndex / (currentPage.length > 1 ? currentPage.length - 1 : 1);
 
-    // Calculate seconds per line and lines per second for the UI label
-    final double secondsPerLine = _speedMs / 1000;
-
     // Check if line or page changed to animate the scroll list
-    if (_lastLineIndex != appState.currentLineIndex || _lastPageIndex != appState.currentPageIndex) {
-      if (_itemScrollController.isAttached) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (_itemScrollController.isAttached) {
+    if (_lastPageIndex != appState.currentPageIndex) {
+      _lastPageIndex = appState.currentPageIndex;
+      _lastLineIndex = appState.currentLineIndex;
+      
+      _isPageReady = false; // Hide the list temporarily
+      
+      void jump() {
+        if (!mounted) return;
+        if (_itemScrollController.isAttached) {
+          double align = 0.35;
+          _itemScrollController.jumpTo(index: appState.currentLineIndex, alignment: align);
+          if (!_isInitialScrollDone) {
+            _isInitialScrollDone = true;
+          }
+          setState(() => _isPageReady = true);
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) => jump());
+        }
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) => jump());
+      
+    } else if (_isInitialScrollDone && (_lastLineIndex != appState.currentLineIndex || layoutChanged)) {
+      int oldLine = _lastLineIndex;
+      _lastLineIndex = appState.currentLineIndex;
+      
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_itemScrollController.isAttached) {
+          double align = 0.35;
+          
+          if (layoutChanged || (oldLine - appState.currentLineIndex).abs() > 2) {
+             _itemScrollController.jumpTo(index: appState.currentLineIndex, alignment: align);
+          } else {
             _itemScrollController.scrollTo(
               index: appState.currentLineIndex,
-              duration: const Duration(milliseconds: 400),
-              curve: Curves.easeInOut,
-              alignment: 0.35, // Visually shift higher to balance the bottom pill
+              duration: const Duration(milliseconds: 150),
+              curve: Curves.easeOutCubic,
+              alignment: align,
             );
           }
-        });
-      }
-      _lastLineIndex = appState.currentLineIndex;
-      _lastPageIndex = appState.currentPageIndex;
+        }
+      });
     }
+
+    final primaryColor = Theme.of(context).colorScheme.primary;
+    final bgColor = isDark 
+        ? Color.alphaBlend(primaryColor.withValues(alpha: 0.04), const Color(0xFF09090B))
+        : Color.alphaBlend(primaryColor.withValues(alpha: 0.04), const Color(0xFFFAFAFA));
 
     return KeyboardListener(
     focusNode: _keyboardFocusNode,
     autofocus: !isMobile, // was: isDesktop
     onKeyEvent: _handleKeyEvent,
     child : Scaffold(
+    backgroundColor: bgColor,
+    extendBodyBehindAppBar: true,
     appBar: PreferredSize(
     preferredSize: const Size.fromHeight(kToolbarHeight),
     child: IgnorePointer(
@@ -285,12 +380,18 @@ class _ReaderScreenState extends State<ReaderScreen> {
         duration: const Duration(milliseconds: 600),
         curve: Curves.easeInOut,
         child: AppBar(
-          title: Text(appState.currentBookTitle),
-          backgroundColor: isDark ? Colors.grey.shade900 : Theme.of(context).colorScheme.secondaryContainer,
+          title: Text(
+            appState.currentBookTitle, 
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 18),
+          ),
+          centerTitle: true,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
           actions: [
           if (!isMobile)
           IconButton(
-            icon: const Icon(Icons.help_outline),
+            icon: const Icon(Icons.keyboard_command_key_rounded),
             tooltip: 'Keyboard Shortcuts',
             onPressed: () => showKeyboardShortcutsDialog(context),
           ),
@@ -303,54 +404,24 @@ class _ReaderScreenState extends State<ReaderScreen> {
               style: TextStyle(fontWeight: FontWeight.bold, color: isDark ? Colors.white : Theme.of(context).colorScheme.primary, fontSize: isMobile ? 12:16),
             ),
           ),
-          PopupMenuButton<int>(
-            iconSize: isMobile ? 24 : 26,
-            icon: const Icon(Icons.palette_outlined),
-            tooltip: 'Change Accent Color',
-            onOpened: () => _handleScreenTap(isLandscape),
-            onSelected: (index) {
-              appState.setThemeColor(index);
-              _handleScreenTap(isLandscape);
-            },
-            itemBuilder: (context) => [
-              for (int i = 0; i < AppState.themeColors.length; i++)
-                PopupMenuItem(
-                  value: i,
-                  child: Row(
-                    children: [
-                      Container(
-                        width: isMobile ? 18:24,
-                        height: isMobile ? 18:24,
-                        decoration: BoxDecoration(
-                          color: AppState.themeColors[i],
-                          shape: BoxShape.circle,
-                          border: appState.colorIndex == i
-                              ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 2)
-                              : null,
-                        ),
-                      ),
-                      SizedBox(width: isMobile ? 8:12),
-                      Text(['Mint', 'Purple', 'Royal Blue', 'Coral', 'Sage'][i]),
-                    ],
-                  ),
-                ),
-            ],
+          ThemePickerButton(
+            appState: appState, 
+            isDark: isDark, 
+            customIconSize: isMobile ? 24 : 26,
           ),
           IconButton(
             iconSize: isMobile ? 24 : 26,
-            icon: Icon(isDark ? Icons.light_mode : Icons.dark_mode),
+            icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded),
             onPressed: (){
               appState.toggleTheme();
-              _handleScreenTap(isLandscape);
             },
             tooltip: 'Toggle Theme',
           ),
           IconButton(
-            iconSize: isMobile ? 18 : 24,
-            icon: const Icon(Icons.arrow_back_ios),
+            iconSize: isMobile ? 22 : 28,
+            icon: const Icon(Icons.chevron_left_rounded),
             onPressed: (){
               appState.previousPage();
-              _handleScreenTap(isLandscape);
             },
             tooltip: 'Previous Page',
           ),
@@ -361,11 +432,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
             ),
           ),
           IconButton(
-            iconSize: isMobile ? 18 : 24,
-            icon: const Icon(Icons.arrow_forward_ios),
+            iconSize: isMobile ? 22 : 28,
+            icon: const Icon(Icons.chevron_right_rounded),
             onPressed: (){
               appState.nextPage();
-              _handleScreenTap(isLandscape);
             },
             tooltip: 'Next Page',
           ),
@@ -375,16 +445,61 @@ class _ReaderScreenState extends State<ReaderScreen> {
     ),
   ),
       ),
-      body: SafeArea(
-        child: GestureDetector(
+      body: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: ()=> _handleScreenTap(isLandscape),
+          onVerticalDragStart: (_) => _dragAccumulator = 0.0,
+          onVerticalDragUpdate: (details) {
+            _dragAccumulator -= details.primaryDelta ?? 0.0;
+            if (_dragAccumulator > _dragThreshold) {
+              appState.nextLine();
+              if (_isPlaying) _scheduleNextLine();
+              _dragAccumulator = 0.0;
+            } else if (_dragAccumulator < -_dragThreshold) {
+              appState.previousLine();
+              if (_isPlaying) _scheduleNextLine();
+              _dragAccumulator = 0.0;
+            }
+          },
           child: Stack(
             children:[
+              // Premium Background Glows
+              Positioned(
+                top: -150,
+                right: -100,
+                child: Container(
+                  width: 400,
+                  height: 400,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: primaryColor.withValues(alpha: isDark ? 0.08 : 0.08),
+                  ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 120, sigmaY: 120),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: -100,
+                left: -100,
+                child: Container(
+                  width: 300,
+                  height: 300,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: primaryColor.withValues(alpha: isDark ? 0.05 : 0.05),
+                  ),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 100, sigmaY: 100),
+                    child: Container(color: Colors.transparent),
+                  ),
+                ),
+              ),
               Column(
           children: [
             if(!isLandscape)
-            LinearProgressIndicator(value: progress, backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2), color: Theme.of(context).colorScheme.primary),
+            LinearProgressIndicator(value: progress, backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15), color: Theme.of(context).colorScheme.primary),
             
             Expanded(
               child: ShaderMask(
@@ -404,53 +519,56 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 blendMode: BlendMode.dstIn,
                 child: ScrollConfiguration(
                   behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-                  child: ScrollablePositionedList.builder(
-                    itemScrollController: _itemScrollController,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: _isPageReady ? 1.0 : 0.0,
+                    child: ScrollablePositionedList.builder(
+                      itemScrollController: _itemScrollController,
                     itemPositionsListener: _itemPositionsListener,
                     initialScrollIndex: appState.currentLineIndex,
                     initialAlignment: 0.35,
                     physics: const NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.symmetric(vertical: MediaQuery.of(context).size.height * 0.5),
+                    padding: EdgeInsets.only(
+                      top: MediaQuery.of(context).size.height * 0.35,
+                      bottom: MediaQuery.of(context).size.height * 0.65,
+                    ),
                     itemCount: currentPage.length,
                   itemBuilder: (context, index) {
                     final line = currentPage[index];
                     final isActive = index == appState.currentLineIndex;
                     final distance = (index - appState.currentLineIndex).abs();
                     
-                    return GestureDetector(
-                      onTap: () {
-                         appState.jumpToLine(index);
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-                        child: AnimatedOpacity(
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 300),
+                        opacity: distance > 1 ? 0.0 : (isActive ? 1.0 : 0.6),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(
+                            begin: isActive ? 0.0 : 0.8, 
+                            end: isActive ? 0.0 : 0.8
+                          ),
                           duration: const Duration(milliseconds: 300),
-                          opacity: distance > 1 ? 0.0 : (isActive ? 1.0 : 0.4),
-                          child: TweenAnimationBuilder<double>(
-                            tween: Tween<double>(
-                              begin: isActive ? 0.0 : 2.0, 
-                              end: isActive ? 0.0 : 2.0
-                            ),
+                          builder: (context, blurValue, child) {
+                            return ImageFiltered(
+                              imageFilter: ImageFilter.blur(sigmaX: blurValue, sigmaY: blurValue),
+                              child: child,
+                            );
+                          },
+                          child: AnimatedScale(
                             duration: const Duration(milliseconds: 300),
-                            builder: (context, blurValue, child) {
-                              return ImageFiltered(
-                                imageFilter: ImageFilter.blur(sigmaX: blurValue, sigmaY: blurValue),
-                                child: child,
-                              );
-                            },
-                            child: AnimatedScale(
-                              duration: const Duration(milliseconds: 300),
-                              scale: isActive ? 1.0 : 0.7,
-                              curve: Curves.easeOutCubic,
-                              child: Text(
-                                line,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: appState.fontSize, // Fixed layout size prevents jumpiness!
-                                  height: 1.4,
-                                  fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-                                  color: Theme.of(context).textTheme.bodyMedium?.color,
-                                ),
+                            scale: isActive ? 1.0 : 0.85,
+                            curve: Curves.easeOutCubic,
+                            child: Text(
+                              line,
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.lora(
+                                fontSize: appState.fontSize,
+                                height: 1.6,
+                                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                                color: isActive 
+                                    ? (isDark ? Colors.white : Colors.black87)
+                                    : (isDark ? Colors.grey.shade600 : Colors.grey.shade400),
                               ),
                             ),
                           ),
@@ -459,6 +577,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     );
                   },
                 ),
+              ),
               ),
               ),
             ),
@@ -478,7 +597,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                           borderRadius: BorderRadius.circular(40),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(isDark ? 0.4 : 0.15),
+                              color: Colors.black.withValues(alpha: isDark ? 0.4 : 0.15),
                               blurRadius: 30,
                               offset: const Offset(0, 12),
                             ),
@@ -491,10 +610,10 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                               decoration: BoxDecoration(
-                                color: isDark ? Colors.black.withOpacity(0.5) : Colors.white.withOpacity(0.8),
+                                color: isDark ? Colors.black.withValues(alpha: 0.5) : Colors.white.withValues(alpha: 0.8),
                                 borderRadius: BorderRadius.circular(40),
                                 border: Border.all(
-                                  color: isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.08),
+                                  color: isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.08),
                                   width: 1,
                                 ),
                               ),
@@ -511,11 +630,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             IconButton(
                               iconSize: 28,
                               icon: Icon(Icons.fast_rewind_rounded, color: Theme.of(context).colorScheme.primary),
-                              onPressed: () { appState.previousLine(); _handleScreenTap(isLandscape); },
+                              onPressed: () { 
+                                appState.previousLine(); 
+                                if (_isPlaying) _scheduleNextLine();
+                              },
                             ),
                             const SizedBox(width: 8),
                             FloatingActionButton(
-                              onPressed: () { _togglePlayPause(); _handleScreenTap(isLandscape); },
+                              onPressed: () { _togglePlayPause(); },
                               backgroundColor: Theme.of(context).colorScheme.primary,
                               foregroundColor: Colors.white,
                               elevation: 0,
@@ -526,9 +648,12 @@ class _ReaderScreenState extends State<ReaderScreen> {
                             IconButton(
                               iconSize: 28,
                               icon: Icon(Icons.fast_forward_rounded, color: Theme.of(context).colorScheme.primary),
-                              onPressed: () { appState.nextLine(); _handleScreenTap(isLandscape); },
+                              onPressed: () { 
+                                appState.nextLine(); 
+                                if (_isPlaying) _scheduleNextLine();
+                              },
                             ),
-                            if (!isLandscape && isMobile) ...[
+                            if (isMobile) ...[
                               const SizedBox(width: 16),
                               IconButton(
                                 iconSize: 24,
@@ -549,21 +674,69 @@ class _ReaderScreenState extends State<ReaderScreen> {
               ),
               if (!_isPlaying && appState.currentLineIndex == currentPage.length - 1)
                 Positioned(
-                  bottom: isLandscape ? 100 : 120,
+                  bottom: isLandscape ? 100 : 140, // Moved higher up
                   left: 0, right: 0,
                   child: Center(
-                    child: FilledButton.icon(
-                      onPressed: appState.nextPage,
-                      icon: const Icon(Icons.menu_book),
-                      label: const Text('Start Next Page'),
-                      style: FilledButton.styleFrom(backgroundColor: Colors.orange.shade700),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: isDark 
+                                ? primaryColor.withValues(alpha: 0.25) 
+                                : primaryColor.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: primaryColor.withValues(alpha: isDark ? 0.4 : 0.3),
+                              width: 1,
+                            ),
+                          ),
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(24),
+                              onTap: () {
+                                appState.nextPage();
+                                if (!_isPlaying) {
+                                  _togglePlayPause();
+                                } else {
+                                  _scheduleNextLine();
+                                }
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.menu_book_rounded, 
+                                      size: 20, 
+                                      color: isDark ? primaryColor : primaryColor.withValues(alpha: 0.9),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Text(
+                                      'Start Next Page', 
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700, 
+                                        fontSize: 15,
+                                        color: isDark ? primaryColor : primaryColor.withValues(alpha: 0.9),
+                                        letterSpacing: -0.3,
+                                      )
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
             ],
           ),
         ),
-      ),
     ));
   }
 }

@@ -1,6 +1,13 @@
 ; windows/installer.iss
 #define MyAppName "Linea"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppExePath "..\build\windows\x64\runner\Release\" + MyAppExeName
+  #if FileExists(MyAppExePath)
+    #define MyAppVersion GetStringFileInfo(MyAppExePath, "ProductVersion")
+  #else
+    #define MyAppVersion "1.1.0"
+  #endif
+#endif
 #define MyAppPublisher "linea"
 #define MyAppExeName "linea.exe"
 

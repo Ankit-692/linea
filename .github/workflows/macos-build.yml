@@ -12,11 +12,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Extract version from pubspec.yaml
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1 | tr -d '[:space:]')
+          echo "APP_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Detected version: $VERSION"
+
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
-          flutter-version: '3.44.8'   # pin to the version you develop with
           cache: true
 
       - name: Enable macOS desktop support
@@ -31,12 +36,17 @@ jobs:
       - name: Locate build output
         run: |
           ls -la build/macos/Build/Products/Release/
-          APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app")
+          APP_PATH=$(find build/macos/Build/Products/Release -maxdepth 1 -name "*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app bundle found in build/macos/Build/Products/Release"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
           echo "APP_PATH=$APP_PATH" >> $GITHUB_ENV
 
       - name: Ad-hoc sign the app
         run: |
-          codesign --force --deep --sign - "$APP_PATH"
+          codesign --force --deep --sign - --entitlements macos/Runner/Release.entitlements "$APP_PATH"
           codesign --verify --verbose "$APP_PATH"
 
       - name: Zip the .app properly (preserves permissions/metadata)
@@ -48,13 +58,13 @@ jobs:
       - name: Upload .app zip artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Linea-macOS-app
+          name: Linea-macOS-${{ env.APP_VERSION }}-app
           path: build/macos/Build/Products/Release/Linea-macOS.zip
           retention-days: 14
 
       - name: Generate .icns from app_icon.png
         run: |
-          mkdir icon.iconset
+          mkdir -p icon.iconset
           SRC="assets/icon/app_icon.png"
 
           sips -z 16 16     "$SRC" --out icon.iconset/icon_16x16.png
@@ -77,6 +87,7 @@ jobs:
         run: |
           APP_NAME=$(basename "$APP_PATH")
           cd build/macos/Build/Products/Release
+          rm -f Linea.dmg
 
           create-dmg \
             --volname "Linea Installer" \
@@ -92,11 +103,15 @@ jobs:
 
       - name: Verify DMG was created
         run: |
-          test -f build/macos/Build/Products/Release/Linea.dmg && echo "DMG created successfully"
+          if [ ! -f build/macos/Build/Products/Release/Linea.dmg ]; then
+            echo "::error::Linea.dmg was not generated!"
+            exit 1
+          fi
+          echo "DMG created successfully"
 
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Linea-macOS-dmg
+          name: Linea-macOS-${{ env.APP_VERSION }}-dmg
           path: build/macos/Build/Products/Release/Linea.dmg
           retention-days: 14

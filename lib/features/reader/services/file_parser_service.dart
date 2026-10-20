@@ -1,9 +1,12 @@
 import 'dart:io';
 import 'dart:isolate';
+import 'package:flutter/foundation.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:epubx/epubx.dart' as epubx;
 
 class FileParserService {
+  static const int minWordsPerLine = 7;
+  static const int maxWordsPerLine = 10;
   
   // Master entry point that detects file type
   static Future<List<List<String>>> parseFile(String filePath) async {
@@ -14,6 +17,78 @@ class FileParserService {
       return await _parseEpub(filePath);
     } else {
       throw Exception('Unsupported file format');
+    }
+  }
+
+  static const List<String> _junkKeywords = [
+    'cover', 'title page', 'copyright', 'dedication', 
+    'acknowledgment', 'acknowledgement', 'contents', 
+    'table of contents', 'index', 'about the author', 
+    'praise', 'bibliography', 'translator', 'foreword', 
+    'preface', 'epigraph', 'also by'
+  ];
+
+  static bool _isJunkTitle(String title) {
+    final lowerTitle = title.toLowerCase().trim();
+    for (var keyword in _junkKeywords) {
+      if (lowerTitle == keyword || lowerTitle.contains(keyword)) return true;
+    }
+    return false;
+  }
+
+  @visibleForTesting
+  static List<String> chunkBlockIntoLines(String block) => _chunkBlockIntoLines(block);
+
+  @visibleForTesting
+  static void paginateLines(List<String> lines, List<List<String>> allPages, {int linesPerPage = 30}) =>
+      _paginateLines(lines, allPages, linesPerPage: linesPerPage);
+
+  static List<String> _chunkBlockIntoLines(String block) {
+    String cleanBlock = block.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleanBlock.isEmpty) return [];
+    
+    final List<String> words = cleanBlock.split(' ');
+    List<String> lines = [];
+    List<String> currentLineWords = [];
+    
+    for (int i = 0; i < words.length; i++) {
+      String word = words[i];
+      if (word.isEmpty) continue;
+      
+      currentLineWords.add(word);
+      
+      bool isPunctuation = word.endsWith('.') || word.endsWith(',') || word.endsWith(';') || 
+                           word.endsWith(':') || word.endsWith('?') || word.endsWith('!') || 
+                           word.endsWith('"') || word.endsWith('”');
+      
+      bool forceBreak = currentLineWords.length >= maxWordsPerLine; 
+      bool smartBreak = currentLineWords.length >= minWordsPerLine && isPunctuation;
+      
+      if (forceBreak || smartBreak || i == words.length - 1) {
+        if (currentLineWords.isNotEmpty) {
+          lines.add(currentLineWords.join(' '));
+          currentLineWords = [];
+        }
+      }
+    }
+    return lines;
+  }
+
+  static void _paginateLines(List<String> lines, List<List<String>> allPages, {int linesPerPage = 30}) {
+    List<String> currentPageLines = [];
+    
+    for (int i = 0; i < lines.length; i++) {
+      String line = lines[i];
+      currentPageLines.add(line);
+      
+      bool isEndOfSentence = line.endsWith('.') || line.endsWith('?') || line.endsWith('!') || line.endsWith('"') || line.endsWith('”');
+      bool isNearEnd = currentPageLines.length >= (linesPerPage - 4);
+      bool isPageFull = currentPageLines.length >= linesPerPage;
+      
+      if (isPageFull || (isNearEnd && isEndOfSentence) || i == lines.length - 1) {
+        allPages.add(List.from(currentPageLines));
+        currentPageLines = [];
+      }
     }
   }
 
@@ -32,8 +107,57 @@ class FileParserService {
         }
         document.dispose();
 
+        // --- Junk Page Filtering ---
+        bool isJunkPdfPage(String pageText) {
+          if (pageText.trim().isEmpty) return true;
+          final lowerPage = pageText.toLowerCase();
+          
+          // Copyright checks
+          if (lowerPage.contains('all rights reserved') && (lowerPage.contains('isbn') || lowerPage.contains('©') || lowerPage.contains('copyright'))) {
+            return true;
+          }
+
+          final lines = pageText.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
+          if (lines.isEmpty) return true;
+          
+          if (_isJunkTitle(lines.first)) return true;
+          
+          // TOC density check (looking for lines like "Chapter 1 ....... 5")
+          int tocLines = 0;
+          for (var line in lines) {
+            if (line.contains('...') || line.contains('. . .')) {
+               if (RegExp(r'\d+$').hasMatch(line.trim())) {
+                 tocLines++;
+               }
+            }
+          }
+          if (tocLines >= 4) return true;
+
+          return false;
+        }
+
+        List<String> validPageTexts = [];
+        for (int i = 0; i < rawPageTexts.length; i++) {
+          var page = rawPageTexts[i];
+          if (isJunkPdfPage(page)) continue;
+
+          // Aggressive volume filter for the first 10 pages of the PDF
+          if (i < 10) {
+            int wordCount = page.split(RegExp(r'\s+')).where((w) => w.trim().isNotEmpty).length;
+            if (wordCount < 100) {
+              String lowerPage = page.toLowerCase();
+              if (!lowerPage.contains('prologue')) {
+                continue; // Skip this short front-matter page
+              }
+            }
+          }
+          
+          validPageTexts.add(page);
+        }
+
+        // Very basic header detection
         Map<String, int> topLineCounts = {};
-        for (var page in rawPageTexts) {
+        for (var page in validPageTexts) {
           final lines = page.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
           if (lines.isNotEmpty) {
             final firstLine = lines.first;
@@ -44,41 +168,50 @@ class FileParserService {
         }
 
         String? detectedHeader;
-        if (rawPageTexts.isNotEmpty) {
+        if (validPageTexts.isNotEmpty) {
           topLineCounts.forEach((line, count) {
-            if (count > (rawPageTexts.length * 0.3)) {
+            if (count > (validPageTexts.length * 0.3)) {
               detectedHeader = line;
             }
           });
         }
 
-        final List<List<String>> readablePages = [];
-        const int wordsPerLine = 10;
+        StringBuffer fullTextBuffer = StringBuffer();
 
-        for (var rawText in rawPageTexts) {
-          String cleanText = rawText.replaceAll(RegExp(r'\s+'), ' ').trim();
+        for (var rawText in validPageTexts) {
+          String cleanText = rawText;
           
           if (detectedHeader != null && cleanText.startsWith(detectedHeader!)) {
             cleanText = cleanText.substring(detectedHeader!.length).trim();
           }
 
-          if (cleanText.isEmpty) continue;
+          cleanText = cleanText.replaceAll(RegExp(r'\s\d+\s*$'), ' ');
+          cleanText = cleanText.replaceAll(RegExp(r'\n\s*\n'), ' __BLOCK__ ');
+          cleanText = cleanText.replaceAll(RegExp(r'\s+'), ' ').trim();
 
-          final List<String> words = cleanText.split(' ');
-          final List<String> pageLines = [];
-          
-          for (int j = 0; j < words.length; j += wordsPerLine) {
-            int end = j + wordsPerLine;
-            if (end > words.length) end = words.length;
-            pageLines.add(words.sublist(j, end).join(' '));
-          }
-          
-          if (pageLines.isNotEmpty) {
-            readablePages.add(pageLines);
-          }
+          if (cleanText.isEmpty) continue;
+          fullTextBuffer.write(cleanText);
+          fullTextBuffer.write(' __BLOCK__ ');
         }
             
-        return readablePages;
+        final String combinedText = fullTextBuffer.toString();
+        List<String> blocks = combinedText.split('__BLOCK__');
+
+        // --- Smart Chunking ---
+        List<String> allLines = [];
+        for (var block in blocks) {
+          allLines.addAll(_chunkBlockIntoLines(block));
+        }
+
+        // --- Smart Pagination ---
+        List<List<String>> allPages = [];
+        _paginateLines(allLines, allPages);
+
+        if (allPages.isEmpty) {
+          allPages.add(['No readable text found in this PDF.']);
+        }
+
+        return allPages;
       } catch (e) {
         throw Exception('Failed to parse PDF: $e');
       }
@@ -92,51 +225,60 @@ class FileParserService {
         final List<int> fileBytes = File(filePath).readAsBytesSync();
         epubx.EpubBook epubBook = await epubx.EpubReader.readBook(fileBytes);
 
-        StringBuffer fullTextBuffer = StringBuffer();
-
-        // Recursive function to extract HTML text from nested chapters
-        void extractChapterText(epubx.EpubChapter chapter) {
-          if (chapter.HtmlContent != null) {
-            // Strip HTML tags using regex to leave only plain text
-            String plainText = chapter.HtmlContent!.replaceAll(RegExp(r'<[^>]*>'), ' ');
-            fullTextBuffer.write(plainText);
-            fullTextBuffer.write(' ');
-          }
-          if (chapter.SubChapters != null) {
-            for (var sub in chapter.SubChapters!) {
-              extractChapterText(sub);
+        List<epubx.EpubChapter> allChapters = [];
+        void flattenChapters(List<epubx.EpubChapter> chapters) {
+          for (var chapter in chapters) {
+            allChapters.add(chapter);
+            if (chapter.SubChapters != null) {
+              flattenChapters(chapter.SubChapters!);
             }
           }
         }
-
+        
         if (epubBook.Chapters != null) {
-          for (var chapter in epubBook.Chapters!) {
-            extractChapterText(chapter);
-          }
+          flattenChapters(epubBook.Chapters!);
         }
 
-        String rawText = fullTextBuffer.toString();
-        String cleanText = rawText.replaceAll(RegExp(r'\s+'), ' ').trim();
-        
-        final List<String> words = cleanText.split(' ');
-        const int wordsPerLine = 10;
-        const int linesPerPage = 30; // Virtual pages since EPUBs flow continuously
-        
         List<List<String>> allPages = [];
-        List<String> currentPageLines = [];
-        List<String> currentLineWords = [];
 
-        for (int i = 0; i < words.length; i++) {
-          currentLineWords.add(words[i]);
-          if (currentLineWords.length == wordsPerLine || i == words.length - 1) {
-            currentPageLines.add(currentLineWords.join(' '));
-            currentLineWords = [];
+        List<epubx.EpubChapter> validChapters = [];
+        for (int i = 0; i < allChapters.length; i++) {
+          var chapter = allChapters[i];
+          if (chapter.Title != null && _isJunkTitle(chapter.Title!)) continue;
 
-            if (currentPageLines.length == linesPerPage || i == words.length - 1) {
-              allPages.add(List.from(currentPageLines));
-              currentPageLines = [];
+          if (i < 5 && chapter.HtmlContent != null) {
+            String tempText = chapter.HtmlContent!.replaceAll(RegExp(r'<[^>]*>'), ' ');
+            int wordCount = tempText.split(RegExp(r'\s+')).where((w) => w.trim().isNotEmpty).length;
+            
+            if (wordCount < 150) {
+              String lowerTitle = (chapter.Title ?? '').toLowerCase();
+              if (!lowerTitle.contains('prologue')) {
+                continue;
+              }
             }
           }
+          validChapters.add(chapter);
+        }
+
+        for (var chapter in validChapters) {
+          if (chapter.Title != null && _isJunkTitle(chapter.Title!)) continue;
+          if (chapter.HtmlContent == null) continue;
+
+          String plainText = chapter.HtmlContent!;
+          plainText = plainText.replaceAll(RegExp(r'</(h[1-6]|p|div|li|blockquote|td|th)>', caseSensitive: false), ' __BLOCK__ ');
+          plainText = plainText.replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), ' __BLOCK__ ');
+          plainText = plainText.replaceAll(RegExp(r'<[^>]*>'), ' ');
+          plainText = plainText.replaceAll('&nbsp;', ' ').replaceAll('&amp;', '&').replaceAll('&lt;', '<').replaceAll('&gt;', '>');
+          
+          List<String> blocks = plainText.split('__BLOCK__');
+          List<String> chapterLines = [];
+          
+          for (var block in blocks) {
+            chapterLines.addAll(_chunkBlockIntoLines(block));
+          }
+          
+          if (chapterLines.isEmpty) continue;
+          _paginateLines(chapterLines, allPages);
         }
 
         if (allPages.isEmpty) {

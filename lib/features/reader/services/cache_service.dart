@@ -42,4 +42,16 @@ class CacheService {
     }
     return null; // No cache found
   }
+
+  // Delete the cached book JSON file
+  static Future<void> deleteBookCache(String originalPath) async {
+    final file = await _getCacheFile(originalPath);
+    if (await file.exists()) {
+      try {
+        await file.delete();
+      } catch (e) {
+        // Ignore if unable to delete
+      }
+    }
+  }
 }

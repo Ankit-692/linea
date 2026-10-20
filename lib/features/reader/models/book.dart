@@ -5,12 +5,14 @@ class Book {
   final String filePath;
   int currentPageIndex;
   int currentLineIndex;
+  int totalPages;
 
   Book({
     required this.title,
     required this.filePath,
     this.currentPageIndex = 0,
     this.currentLineIndex = 0,
+    this.totalPages = 1,
   });
 }
 
@@ -21,11 +23,24 @@ class BookAdapter extends TypeAdapter<Book> {
 
   @override
   Book read(BinaryReader reader) {
+    final title = reader.readString();
+    final filePath = reader.readString();
+    final currentPageIndex = reader.readInt();
+    final currentLineIndex = reader.readInt();
+    
+    int totalPages = 1;
+    try {
+      totalPages = reader.readInt();
+    } catch (_) {
+      // Ignore if reading old format books without totalPages
+    }
+
     return Book(
-      title: reader.readString(),
-      filePath: reader.readString(),
-      currentPageIndex: reader.readInt(),
-      currentLineIndex: reader.readInt(),
+      title: title,
+      filePath: filePath,
+      currentPageIndex: currentPageIndex,
+      currentLineIndex: currentLineIndex,
+      totalPages: totalPages,
     );
   }
 
@@ -35,5 +50,6 @@ class BookAdapter extends TypeAdapter<Book> {
     writer.writeString(obj.filePath);
     writer.writeInt(obj.currentPageIndex);
     writer.writeInt(obj.currentLineIndex);
+    writer.writeInt(obj.totalPages);
   }
 }
